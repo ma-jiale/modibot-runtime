@@ -1,6 +1,6 @@
 # 语音对话 Agent - 文字原型
 
-这是第一版最小可用实现：命令行文字对话，使用 OpenAI Responses API，并保留多轮上下文。后续可以在这个结构上继续接入语音识别和语音合成。
+这是第一版最小可用实现：命令行文字对话，使用 OpenAI 兼容的 Chat Completions API，并保留多轮上下文。默认配置面向 MiniMax Coding/Token Plan，也保留了 `OPENAI_*` 环境变量兼容。
 
 ## 安装
 
@@ -12,24 +12,37 @@ pip install -r requirements.txt
 
 ## 配置
 
-方式一：使用 `.env` 文件。
+复制配置模板：
 
 ```powershell
 Copy-Item .env.example .env
 ```
 
-然后编辑 `.env`，填入你的 API Key：
+然后编辑 `.env`：
 
 ```env
-OPENAI_API_KEY=your_api_key_here
-OPENAI_MODEL=gpt-5-mini
+MINIMAX_API_KEY=your_minimax_api_key_here
+MINIMAX_BASE_URL=https://api.minimaxi.com/v1
+MINIMAX_MODEL=MiniMax-M2.7
+MINIMAX_API_MODE=chat
+MAX_HISTORY_TURNS=20
 ```
 
-方式二：直接在 PowerShell 里设置环境变量。
+说明：
+
+- `MINIMAX_API_KEY`：你的 MiniMax API Key。
+- `MINIMAX_BASE_URL`：MiniMax OpenAI 兼容地址，默认 `https://api.minimaxi.com/v1`。
+- `MINIMAX_MODEL`：模型名，MiniMax Coding/Token Plan 常用 `MiniMax-M2.7` 或 `MiniMax-M2.7-highspeed`。
+- `MINIMAX_API_MODE`：接口模式，MiniMax 兼容接口使用 `chat`。
+- `MAX_HISTORY_TURNS`：保留最近多少轮上下文，默认 `20`。
+
+也可以直接在 PowerShell 里设置：
 
 ```powershell
-$env:OPENAI_API_KEY="your_api_key_here"
-$env:OPENAI_MODEL="gpt-5-mini"
+$env:MINIMAX_API_KEY="your_minimax_api_key_here"
+$env:MINIMAX_BASE_URL="https://api.minimaxi.com/v1"
+$env:MINIMAX_MODEL="MiniMax-M2.7"
+$env:MINIMAX_API_MODE="chat"
 ```
 
 ## 运行
@@ -46,6 +59,7 @@ python main.py
 ## 文件说明
 
 - `main.py`：命令行交互入口
-- `agent.py`：OpenAI 调用和上下文管理
+- `agent.py`：OpenAI 兼容接口调用和错误处理
+- `conversation.py`：多轮对话上下文管理
 - `config.py`：环境变量和默认配置
 - `.env.example`：本地配置模板，不要把真实 `.env` 提交到版本控制

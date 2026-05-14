@@ -2,28 +2,32 @@ from agent import AgentError, VoiceTextAgent
 from config import load_settings
 
 
-EXIT_COMMANDS = {"exit", "quit", "q", "bye", "退出", "再见"}
-RESET_COMMANDS = {"reset", "/reset", "清空", "重置"}
+EXIT_COMMANDS = {"exit", "quit", "q", "bye", "tuichu", "zaijian"}
+RESET_COMMANDS = {"reset", "/reset", "clear", "qingkong", "chongzhi"}
 
 
 def main() -> int:
     try:
         settings = load_settings()
     except RuntimeError as exc:
-        print(f"配置错误：{exc}")
+        print(f"Config error: {exc}")
         return 1
 
     agent = VoiceTextAgent(settings)
 
-    print("文字对话 Agent 已启动。")
-    print(f"当前模型：{settings.model}")
-    print("输入 exit / quit / 退出 结束；输入 reset / 清空 重置上下文。")
+    print("Text conversation agent started.")
+    print(f"Provider: {settings.provider}")
+    print(f"Model: {settings.model}")
+    print(f"API mode: {settings.api_mode}")
+    if settings.base_url:
+        print(f"Base URL: {settings.base_url}")
+    print("Type exit/quit to stop, or reset/clear to clear the conversation.")
 
     while True:
         try:
-            user_text = input("\n你> ").strip()
+            user_text = input("\nYou> ").strip()
         except (EOFError, KeyboardInterrupt):
-            print("\n已退出。")
+            print("\nExited.")
             return 0
 
         if not user_text:
@@ -31,18 +35,18 @@ def main() -> int:
 
         normalized = user_text.lower()
         if normalized in EXIT_COMMANDS:
-            print("已退出。")
+            print("Exited.")
             return 0
 
         if normalized in RESET_COMMANDS:
             agent.reset()
-            print("上下文已清空。")
+            print("Conversation cleared.")
             continue
 
         try:
             reply = agent.chat(user_text)
         except AgentError as exc:
-            print(f"请求失败：{exc}")
+            print(f"Request failed: {exc}")
             continue
 
         print(f"Agent> {reply}")
