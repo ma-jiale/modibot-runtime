@@ -1,6 +1,6 @@
 # Voice Conversation Agent - Text Prototype
 
-This project is a command-line chat agent. It uses an OpenAI-compatible chat API for text conversation and a pluggable TTS module for speech output.
+This project is a command-line chat agent. It uses an OpenAI-compatible chat API for text conversation and Windows system TTS for speech output.
 
 ## Install
 
@@ -51,6 +51,8 @@ TTS_PROVIDER=system
 TTS_FORMAT=wav
 TTS_OUTPUT_DIR=outputs
 TTS_AUTOPLAY=true
+TTS_STREAMING=true
+TTS_STREAM_CHUNK_CHARS=60
 ```
 
 Notes:
@@ -58,6 +60,9 @@ Notes:
 - `system` outputs WAV files and works only on Windows for now.
 - Audio files are saved in `TTS_OUTPUT_DIR`, which defaults to `outputs`.
 - `outputs/` is ignored by git.
+- `TTS_STREAMING=true` makes the agent speak short sentence chunks while the model is still generating.
+- `TTS_STREAM_CHUNK_CHARS` controls the maximum chunk size when punctuation is sparse.
+- In streaming mode, chunks are played immediately regardless of `TTS_AUTOPLAY`; that flag only affects non-streaming playback.
 
 ## Files
 
@@ -66,4 +71,5 @@ Notes:
 - `conversation.py`: bounded conversation history
 - `config.py`: environment variable loading and validation
 - `tts.py`: generic TTS interface plus the Windows system provider
+- `streaming_tts.py`: streaming text chunking, TTS byte generation, and ordered audio playback
 - `.env.example`: local configuration template; never commit real `.env` values

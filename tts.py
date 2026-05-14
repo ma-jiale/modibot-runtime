@@ -1,6 +1,7 @@
 import os
 import subprocess
 import sys
+import tempfile
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -25,6 +26,9 @@ class SynthesisResult:
 class TextToSpeechProvider(Protocol):
     """Common interface implemented by concrete TTS providers."""
 
+    def synthesize_to_bytes(self, text: str) -> bytes:
+        """Convert TEXT to speech and return WAV audio bytes."""
+
     def synthesize_to_file(self, text: str) -> SynthesisResult:
         """Convert TEXT to speech and save it to a local audio file."""
 
@@ -48,10 +52,30 @@ class SystemSpeechTTSProvider:
         if sys.platform != "win32":
             raise TTSError("The system TTS provider currently supports Windows only.")
 
-        output_path = self._build_output_path()
-        self._run_powershell_synthesis(content, output_path)
-        audio_bytes = output_path.read_bytes()
+        audio_bytes = self.synthesize_to_bytes(content)
+        output_path = self._write_audio_file(audio_bytes)
         return SynthesisResult(audio_bytes=audio_bytes, path=output_path, format="wav")
+
+    def synthesize_to_bytes(self, text: str) -> bytes:
+        """Synthesize TEXT and return WAV bytes without keeping a file."""
+        content = text.strip()
+        if not content:
+            raise ValueError("text cannot be empty")
+
+        if sys.platform != "win32":
+            raise TTSError("The system TTS provider currently supports Windows only.")
+
+        with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as temp_file:
+            temp_path = Path(temp_file.name)
+
+        try:
+            self._run_powershell_synthesis(content, temp_path)
+            return temp_path.read_bytes()
+        finally:
+            try:
+                temp_path.unlink(missing_ok=True)
+            except OSError:
+                pass
 
     def _build_output_path(self) -> Path:
         """Return a unique WAV output path."""
@@ -60,6 +84,12 @@ class SystemSpeechTTSProvider:
 
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
         return output_dir / f"tts_{timestamp}.wav"
+
+    def _write_audio_file(self, audio_bytes: bytes) -> Path:
+        """Save AUDIO_BYTES to the configured output directory."""
+        output_path = self._build_output_path()
+        output_path.write_bytes(audio_bytes)
+        return output_path
 
     def _run_powershell_synthesis(self, text: str, output_path: Path) -> None:
         """Invoke PowerShell with environment values instead of interpolating TEXT."""
@@ -122,8 +152,25 @@ def play_audio_file(path: Path) -> None:
         os.startfile(path)  # type: ignore[attr-defined]
         return
 
-    command = ["open", str(path)] if os.uname().sysname == "Darwin" else ["xdg-open", str(path)]
+    command = (
+        ["open", str(path)]
+        if os.uname().sysname == "Darwin"
+        else ["xdg-open", str(path)]
+    )
     subprocess.Popen(command, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+
+def play_audio_bytes_blocking(audio_bytes: bytes) -> None:
+    """Play WAV AUDIO_BYTES and wait until playback finishes."""
+    if os.name != "nt":
+        raise TTSError("In-memory audio playback currently supports Windows only.")
+
+    try:
+        import winsound
+
+        winsound.PlaySound(audio_bytes, winsound.SND_MEMORY)
+    except RuntimeError as exc:
+        raise TTSError(f"Audio playback failed: {exc}") from exc
 
 
 def _system_rate_from_speed(speed: float) -> int:

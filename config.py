@@ -12,6 +12,7 @@ DEFAULT_API_MODE = "chat"
 DEFAULT_TTS_PROVIDER = "system"
 DEFAULT_TTS_FORMAT = "wav"
 DEFAULT_TTS_OUTPUT_DIR = "outputs"
+DEFAULT_TTS_STREAM_CHUNK_CHARS = 60
 DEFAULT_SYSTEM_PROMPT = (
     "You are the text prototype of a voice conversation agent. "
     "Reply in natural, concise Chinese that is suitable for being read aloud. "
@@ -45,6 +46,8 @@ class TTSSettings:
     file_format: str
     output_dir: str
     autoplay: bool
+    streaming: bool
+    stream_chunk_chars: int
     speed: float
     volume: float
 
@@ -103,6 +106,10 @@ def _read_tts_settings() -> TTSSettings:
         file_format=file_format,
         output_dir=_read_first_env("TTS_OUTPUT_DIR", default=DEFAULT_TTS_OUTPUT_DIR),
         autoplay=_read_bool("TTS_AUTOPLAY", default=False),
+        streaming=_read_bool("TTS_STREAMING", default=True),
+        stream_chunk_chars=_read_positive_int(
+            "TTS_STREAM_CHUNK_CHARS", DEFAULT_TTS_STREAM_CHUNK_CHARS
+        ),
         speed=_read_float("TTS_SPEED", default=1.0),
         volume=_read_float("TTS_VOLUME", default=1.0),
     )
