@@ -7,6 +7,12 @@ RESET_COMMANDS = {"reset", "/reset", "clear", "qingkong", "chongzhi"}
 
 
 def main() -> int:
+    """Run the command-line chat loop.
+
+    The CLI is intentionally thin: configuration, API calls, and history are
+    handled by helper modules so this function only coordinates user input and
+    terminal output.
+    """
     try:
         settings = load_settings()
     except RuntimeError as exc:

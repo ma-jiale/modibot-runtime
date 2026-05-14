@@ -23,7 +23,16 @@ class AgentError(RuntimeError):
 
 
 class VoiceTextAgent:
+    """A small chat agent backed by an OpenAI-compatible API.
+
+    The agent owns API calls and delegates local conversation storage to
+    ConversationHistory. It keeps the two supported API styles separate so the
+    command-line interface can switch providers without knowing transport
+    details.
+    """
+
     def __init__(self, settings: Settings) -> None:
+        """Initialize the API client and empty conversation state."""
         self._settings = settings
         self._client = OpenAI(
             api_key=settings.api_key,
@@ -34,10 +43,17 @@ class VoiceTextAgent:
         self._previous_response_id: str | None = None
 
     def reset(self) -> None:
+        """Clear local chat history and provider-side Responses API state."""
         self._history.clear()
         self._previous_response_id = None
 
     def chat(self, user_text: str) -> str:
+        """Return the assistant reply for USER_TEXT.
+
+        USER_TEXT must contain non-whitespace text. API-specific exceptions are
+        translated into AgentError so callers can show a friendly message
+        without importing OpenAI SDK exception classes.
+        """
         message = user_text.strip()
         if not message:
             raise ValueError("user_text cannot be empty")
@@ -61,6 +77,7 @@ class VoiceTextAgent:
             raise AgentError(f"API call failed: {exc}") from exc
 
     def _chat_with_chat_completions_api(self, message: str) -> str:
+        """Send MESSAGE through Chat Completions and remember the turn."""
         response = self._client.chat.completions.create(
             model=self._settings.model,
             messages=self._history.to_messages(
@@ -74,6 +91,7 @@ class VoiceTextAgent:
         return reply
 
     def _chat_with_responses_api(self, message: str) -> str:
+        """Send MESSAGE through Responses API using provider-managed context."""
         request: dict[str, Any] = {
             "model": self._settings.model,
             "instructions": self._settings.system_prompt,
@@ -92,6 +110,7 @@ class VoiceTextAgent:
 
 
 def _extract_chat_reply(response) -> str:
+    """Extract and clean the first text reply from a Chat Completions response."""
     if not response.choices:
         raise AgentError("Model returned no candidate replies.")
 
@@ -113,10 +132,12 @@ def _extract_chat_reply(response) -> str:
 
 
 def clean_model_reply(text: str) -> str:
+    """Remove provider-visible reasoning blocks from TEXT before display."""
     return THINK_BLOCK_PATTERN.sub("", text).strip()
 
 
 def _format_status_error(exc: APIStatusError) -> str:
+    """Return a short provider error detail suitable for terminal output."""
     response_text = getattr(exc.response, "text", "") or ""
     response_text = " ".join(response_text.split())
     if not response_text:

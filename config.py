@@ -19,6 +19,8 @@ VALID_API_MODES = {"chat", "responses"}
 
 @dataclass(frozen=True)
 class Settings:
+    """Runtime configuration loaded from environment variables."""
+
     provider: str
     api_key: str
     model: str
@@ -30,6 +32,11 @@ class Settings:
 
 
 def load_settings() -> Settings:
+    """Load and validate app settings from .env and the process environment.
+
+    MiniMax-specific variables are preferred, while OPENAI_* names remain
+    supported so the same code can target other OpenAI-compatible providers.
+    """
     load_dotenv()
 
     provider = os.getenv("AI_PROVIDER", DEFAULT_PROVIDER).strip().lower()
@@ -60,6 +67,7 @@ def load_settings() -> Settings:
 
 
 def _read_base_url() -> str | None:
+    """Return the normalized OpenAI-compatible API base URL."""
     raw_url = _read_first_env(
         "MINIMAX_BASE_URL",
         "OPENAI_BASE_URL",
@@ -70,6 +78,7 @@ def _read_base_url() -> str | None:
 
 
 def _read_api_mode() -> str:
+    """Return the selected API mode after validating it."""
     api_mode = (
         _read_first_env("MINIMAX_API_MODE", "OPENAI_API_MODE", default=DEFAULT_API_MODE)
         .strip()
@@ -82,6 +91,7 @@ def _read_api_mode() -> str:
 
 
 def _read_default_headers() -> dict[str, str]:
+    """Return optional provider headers, omitting unset values."""
     headers = {
         "User-Agent": _read_first_env("MINIMAX_USER_AGENT", "OPENAI_USER_AGENT"),
         "HTTP-Referer": _read_first_env(
@@ -93,6 +103,7 @@ def _read_default_headers() -> dict[str, str]:
 
 
 def _read_positive_int(name: str, default: int) -> int:
+    """Return environment variable NAME as a positive int, or DEFAULT."""
     raw_value = os.getenv(name, "").strip()
     if not raw_value:
         return default
@@ -109,6 +120,11 @@ def _read_positive_int(name: str, default: int) -> int:
 
 
 def _normalize_base_url(raw_url: str) -> str | None:
+    """Normalize RAW_URL to the API root expected by the OpenAI SDK.
+
+    Users sometimes paste a full endpoint path. The SDK appends endpoint paths
+    itself, so this function trims known suffixes like /chat/completions.
+    """
     if not raw_url:
         return None
 
@@ -121,6 +137,7 @@ def _normalize_base_url(raw_url: str) -> str | None:
 
 
 def _read_first_env(*names: str, default: str = "") -> str:
+    """Return the first non-empty environment value among NAMES."""
     for name in names:
         value = os.getenv(name, "").strip()
         if value:
