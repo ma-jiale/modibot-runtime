@@ -1,13 +1,28 @@
 import asyncio
+from dataclasses import dataclass
 
 from agent import AgentError, VoiceTextAgent
-from config import load_settings
+from asr import ASRError, SpeechRecognizer, create_speech_recognizer
+from config import Settings, TTSSettings, load_settings
+from recorder import RecorderError, WavRecorder
 from streaming_tts import speak_streaming_response
-from tts import TTSError, create_tts_provider, play_audio_file
+from tts import TTSError, TextToSpeechProvider, create_tts_provider, play_audio_file
 
 
 EXIT_COMMANDS = {"exit", "quit", "q", "bye", "tuichu", "zaijian"}
 RESET_COMMANDS = {"reset", "/reset", "clear", "qingkong", "chongzhi"}
+VOICE_COMMANDS = {"voice", "v", "speak"}
+
+
+@dataclass(frozen=True)
+class Runtime:
+    """The long-lived services used by the command-line loop."""
+
+    settings: Settings
+    agent: VoiceTextAgent
+    tts_provider: TextToSpeechProvider | None
+    recorder: WavRecorder
+    recognizer: SpeechRecognizer
 
 
 def main() -> int:
@@ -23,19 +38,8 @@ def main() -> int:
         print(f"Config error: {exc}")
         return 1
 
-    agent = VoiceTextAgent(settings)
-    tts_provider = create_tts_provider(settings.tts) if settings.tts.enabled else None
-
-    print("Text conversation agent started.")
-    print(f"Provider: {settings.provider}")
-    print(f"Model: {settings.model}")
-    print(f"API mode: {settings.api_mode}")
-    if settings.base_url:
-        print(f"Base URL: {settings.base_url}")
-    if settings.tts.enabled:
-        print(f"TTS: {settings.tts.provider}")
-        print(f"TTS streaming: {settings.tts.streaming}")
-    print("Type exit/quit to stop, or reset/clear to clear the conversation.")
+    runtime = _create_runtime(settings)
+    _print_startup(runtime.settings)
 
     while True:
         try:
@@ -53,21 +57,79 @@ def main() -> int:
             return 0
 
         if normalized in RESET_COMMANDS:
-            agent.reset()
+            runtime.agent.reset()
             print("Conversation cleared.")
             continue
 
-        _handle_user_turn(agent, tts_provider, user_text, settings.tts)
+        if normalized in VOICE_COMMANDS:
+            user_text = _record_and_transcribe(runtime.recorder, runtime.recognizer)
+            if not user_text:
+                continue
+
+        _handle_user_turn(runtime, user_text)
 
 
-def _handle_user_turn(agent: VoiceTextAgent, tts_provider, user_text: str, tts) -> None:
+def _create_runtime(settings: Settings) -> Runtime:
+    """Create long-lived services from SETTINGS."""
+    return Runtime(
+        settings=settings,
+        agent=VoiceTextAgent(settings),
+        tts_provider=(
+            create_tts_provider(settings.tts) if settings.tts.enabled else None
+        ),
+        recorder=WavRecorder(settings.asr),
+        recognizer=create_speech_recognizer(settings.asr),
+    )
+
+
+def _print_startup(settings: Settings) -> None:
+    """Print configuration that is safe to show in the terminal."""
+    print("Text conversation agent started.")
+    print(f"Provider: {settings.provider}")
+    print(f"Model: {settings.model}")
+    print(f"API mode: {settings.api_mode}")
+    if settings.base_url:
+        print(f"Base URL: {settings.base_url}")
+    if settings.tts.enabled:
+        print(f"TTS: {settings.tts.provider}")
+        print(f"TTS streaming: {settings.tts.streaming}")
+    print("Type voice to record, exit/quit to stop, or reset/clear to clear history.")
+
+
+def _record_and_transcribe(
+    recorder: WavRecorder, recognizer: SpeechRecognizer
+) -> str | None:
+    """Record one utterance, transcribe it, and return text."""
+    try:
+        recording = recorder.record_until_enter()
+        print(f"Recorded: {recording.path}")
+        result = recognizer.transcribe(recording.path)
+    except (RecorderError, ASRError) as exc:
+        print(f"Voice input failed: {exc}")
+        return None
+
+    print(f"You said> {result.text}")
+    return result.text
+
+
+def _handle_user_turn(runtime: Runtime, user_text: str) -> None:
     """Route one user turn through text-only, streaming TTS, or file TTS."""
-    if tts_provider is None:
-        _reply_with_text(agent, user_text)
-    elif tts.streaming:
-        _stream_reply_with_tts(agent, tts_provider, user_text, tts.stream_chunk_chars)
+    if runtime.tts_provider is None:
+        _reply_with_text(runtime.agent, user_text)
+    elif runtime.settings.tts.streaming:
+        _stream_reply_with_tts(
+            runtime.agent,
+            runtime.tts_provider,
+            user_text,
+            runtime.settings.tts.stream_chunk_chars,
+        )
     else:
-        _reply_with_file_tts(agent, tts_provider, user_text, tts.autoplay)
+        _reply_with_file_tts(
+            runtime.agent,
+            runtime.tts_provider,
+            user_text,
+            runtime.settings.tts.autoplay,
+        )
 
 
 def _reply_with_text(agent: VoiceTextAgent, user_text: str) -> None:

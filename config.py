@@ -13,6 +13,14 @@ DEFAULT_TTS_PROVIDER = "system"
 DEFAULT_TTS_FORMAT = "wav"
 DEFAULT_TTS_OUTPUT_DIR = "outputs"
 DEFAULT_TTS_STREAM_CHUNK_CHARS = 60
+DEFAULT_ASR_PROVIDER = "faster-whisper"
+DEFAULT_ASR_MODEL_SIZE = "base"
+DEFAULT_ASR_DEVICE = "cpu"
+DEFAULT_ASR_COMPUTE_TYPE = "int8"
+DEFAULT_ASR_LANGUAGE = "zh"
+DEFAULT_RECORDINGS_DIR = "recordings"
+DEFAULT_RECORD_SAMPLE_RATE = 16000
+DEFAULT_RECORD_CHANNELS = 1
 DEFAULT_SYSTEM_PROMPT = (
     "You are the text prototype of a voice conversation agent. "
     "Reply in natural, concise Chinese that is suitable for being read aloud. "
@@ -35,6 +43,7 @@ class Settings:
     default_headers: dict[str, str]
     max_history_turns: int
     tts: "TTSSettings"
+    asr: "ASRSettings"
 
 
 @dataclass(frozen=True)
@@ -50,6 +59,20 @@ class TTSSettings:
     stream_chunk_chars: int
     speed: float
     volume: float
+
+
+@dataclass(frozen=True)
+class ASRSettings:
+    """Runtime configuration for speech-to-text and recording."""
+
+    provider: str
+    model_size: str
+    device: str
+    compute_type: str
+    language: str | None
+    recordings_dir: str
+    sample_rate: int
+    channels: int
 
 
 def load_settings() -> Settings:
@@ -85,6 +108,7 @@ def load_settings() -> Settings:
             "MAX_HISTORY_TURNS", DEFAULT_MAX_HISTORY_TURNS
         ),
         tts=_read_tts_settings(),
+        asr=_read_asr_settings(),
     )
 
 
@@ -99,6 +123,8 @@ def _read_tts_settings() -> TTSSettings:
     if file_format not in VALID_TTS_FORMATS:
         valid_formats = ", ".join(sorted(VALID_TTS_FORMATS))
         raise RuntimeError(f"TTS_FORMAT must be one of: {valid_formats}.")
+    if provider == "system":
+        file_format = "wav"
 
     return TTSSettings(
         enabled=_read_bool("TTS_ENABLED", default=False),
@@ -115,6 +141,29 @@ def _read_tts_settings() -> TTSSettings:
     )
 
 
+def _read_asr_settings() -> ASRSettings:
+    """Load speech-to-text and recorder settings."""
+    language = _read_first_env("ASR_LANGUAGE", default=DEFAULT_ASR_LANGUAGE)
+    return ASRSettings(
+        provider=_read_first_env("ASR_PROVIDER", default=DEFAULT_ASR_PROVIDER).lower(),
+        model_size=_read_first_env("ASR_MODEL_SIZE", default=DEFAULT_ASR_MODEL_SIZE),
+        device=_normalize_asr_device(
+            _read_first_env("ASR_DEVICE", default=DEFAULT_ASR_DEVICE)
+        ),
+        compute_type=_read_first_env(
+            "ASR_COMPUTE_TYPE", default=DEFAULT_ASR_COMPUTE_TYPE
+        ),
+        language=language or None,
+        recordings_dir=_read_first_env(
+            "RECORDINGS_DIR", default=DEFAULT_RECORDINGS_DIR
+        ),
+        sample_rate=_read_positive_int(
+            "RECORD_SAMPLE_RATE", DEFAULT_RECORD_SAMPLE_RATE
+        ),
+        channels=_read_positive_int("RECORD_CHANNELS", DEFAULT_RECORD_CHANNELS),
+    )
+
+
 def _read_base_url() -> str | None:
     """Return the normalized OpenAI-compatible API base URL."""
     raw_url = _read_first_env(
@@ -124,6 +173,14 @@ def _read_base_url() -> str | None:
         default=DEFAULT_BASE_URL,
     )
     return _normalize_base_url(raw_url)
+
+
+def _normalize_asr_device(device: str) -> str:
+    """Return the faster-whisper device name for common user aliases."""
+    normalized = device.strip().lower()
+    if normalized == "gpu":
+        return "cuda"
+    return normalized
 
 
 def _read_api_mode() -> str:

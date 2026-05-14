@@ -36,8 +36,37 @@ python main.py
 
 Commands:
 
+- `voice` / `v`: record one utterance, transcribe it, and send it to the agent
 - `exit` / `quit`: stop the program
 - `reset` / `clear`: clear the current conversation
+
+## Voice Input
+
+The ASR module uses a generic recognizer interface. The first provider is
+`faster-whisper`, which runs locally and does not need an ASR API key.
+
+MVP voice input uses "press Enter to start from the `voice` command, press Enter
+again to stop recording". A true push-to-talk hotkey can be added on top of the
+same recorder and ASR interfaces later.
+
+```env
+ASR_PROVIDER=faster-whisper
+ASR_MODEL_SIZE=base
+ASR_DEVICE=cpu
+ASR_COMPUTE_TYPE=int8
+ASR_LANGUAGE=zh
+RECORDINGS_DIR=recordings
+RECORD_SAMPLE_RATE=16000
+RECORD_CHANNELS=1
+```
+
+Notes:
+
+- `ASR_MODEL_SIZE=tiny` is faster but less accurate.
+- `ASR_MODEL_SIZE=base` is a good CPU MVP default.
+- The first run downloads the model.
+- Recordings are saved in `recordings/`, which is ignored by git.
+- If recording fails on Windows, try `RECORD_SAMPLE_RATE=44100` to match your microphone device.
 
 ## Text To Speech
 
@@ -70,6 +99,8 @@ Notes:
 - `agent.py`: OpenAI-compatible chat API calls and error handling
 - `conversation.py`: bounded conversation history
 - `config.py`: environment variable loading and validation
+- `recorder.py`: microphone recording and WAV saving
+- `asr.py`: generic ASR interface plus faster-whisper provider
 - `tts.py`: generic TTS interface plus the Windows system provider
 - `streaming_tts.py`: streaming text chunking, TTS byte generation, and ordered audio playback
 - `.env.example`: local configuration template; never commit real `.env` values
