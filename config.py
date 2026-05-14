@@ -9,12 +9,16 @@ DEFAULT_MODEL = "MiniMax-M2.7"
 DEFAULT_BASE_URL = "https://api.minimaxi.com/v1"
 DEFAULT_MAX_HISTORY_TURNS = 20
 DEFAULT_API_MODE = "chat"
+DEFAULT_TTS_PROVIDER = "system"
+DEFAULT_TTS_FORMAT = "wav"
+DEFAULT_TTS_OUTPUT_DIR = "outputs"
 DEFAULT_SYSTEM_PROMPT = (
     "You are the text prototype of a voice conversation agent. "
     "Reply in natural, concise Chinese that is suitable for being read aloud. "
     "If the user's request is unclear, ask one short clarifying question first."
 )
 VALID_API_MODES = {"chat", "responses"}
+VALID_TTS_FORMATS = {"mp3", "wav", "pcm", "flac"}
 
 
 @dataclass(frozen=True)
@@ -29,6 +33,20 @@ class Settings:
     api_mode: str
     default_headers: dict[str, str]
     max_history_turns: int
+    tts: "TTSSettings"
+
+
+@dataclass(frozen=True)
+class TTSSettings:
+    """Runtime configuration for text-to-speech providers."""
+
+    enabled: bool
+    provider: str
+    file_format: str
+    output_dir: str
+    autoplay: bool
+    speed: float
+    volume: float
 
 
 def load_settings() -> Settings:
@@ -63,6 +81,30 @@ def load_settings() -> Settings:
         max_history_turns=_read_positive_int(
             "MAX_HISTORY_TURNS", DEFAULT_MAX_HISTORY_TURNS
         ),
+        tts=_read_tts_settings(),
+    )
+
+
+def _read_tts_settings() -> TTSSettings:
+    """Load local text-to-speech settings."""
+    provider = _read_first_env("TTS_PROVIDER", default=DEFAULT_TTS_PROVIDER).lower()
+    file_format = (
+        _read_first_env("TTS_FORMAT", default=DEFAULT_TTS_FORMAT)
+        .strip()
+        .lower()
+    )
+    if file_format not in VALID_TTS_FORMATS:
+        valid_formats = ", ".join(sorted(VALID_TTS_FORMATS))
+        raise RuntimeError(f"TTS_FORMAT must be one of: {valid_formats}.")
+
+    return TTSSettings(
+        enabled=_read_bool("TTS_ENABLED", default=False),
+        provider=provider,
+        file_format=file_format,
+        output_dir=_read_first_env("TTS_OUTPUT_DIR", default=DEFAULT_TTS_OUTPUT_DIR),
+        autoplay=_read_bool("TTS_AUTOPLAY", default=False),
+        speed=_read_float("TTS_SPEED", default=1.0),
+        volume=_read_float("TTS_VOLUME", default=1.0),
     )
 
 
@@ -117,6 +159,32 @@ def _read_positive_int(name: str, default: int) -> int:
         raise RuntimeError(f"{name} must be greater than 0.")
 
     return value
+
+
+def _read_float(name: str, default: float) -> float:
+    """Return environment variable NAME as a float, or DEFAULT."""
+    raw_value = os.getenv(name, "").strip()
+    if not raw_value:
+        return default
+
+    try:
+        return float(raw_value)
+    except ValueError as exc:
+        raise RuntimeError(f"{name} must be a number.") from exc
+
+
+def _read_bool(name: str, default: bool) -> bool:
+    """Return environment variable NAME as a bool, or DEFAULT."""
+    raw_value = os.getenv(name, "").strip().lower()
+    if not raw_value:
+        return default
+
+    if raw_value in {"1", "true", "yes", "on"}:
+        return True
+    if raw_value in {"0", "false", "no", "off"}:
+        return False
+
+    raise RuntimeError(f"{name} must be true or false.")
 
 
 def _normalize_base_url(raw_url: str) -> str | None:

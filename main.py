@@ -1,5 +1,6 @@
 from agent import AgentError, VoiceTextAgent
 from config import load_settings
+from tts import TTSError, create_tts_provider, play_audio_file
 
 
 EXIT_COMMANDS = {"exit", "quit", "q", "bye", "tuichu", "zaijian"}
@@ -20,6 +21,7 @@ def main() -> int:
         return 1
 
     agent = VoiceTextAgent(settings)
+    tts_provider = create_tts_provider(settings.tts) if settings.tts.enabled else None
 
     print("Text conversation agent started.")
     print(f"Provider: {settings.provider}")
@@ -27,6 +29,8 @@ def main() -> int:
     print(f"API mode: {settings.api_mode}")
     if settings.base_url:
         print(f"Base URL: {settings.base_url}")
+    if settings.tts.enabled:
+        print(f"TTS: {settings.tts.provider} / {settings.tts.model}")
     print("Type exit/quit to stop, or reset/clear to clear the conversation.")
 
     while True:
@@ -56,6 +60,18 @@ def main() -> int:
             continue
 
         print(f"Agent> {reply}")
+        if tts_provider is None:
+            continue
+
+        try:
+            audio = tts_provider.synthesize_to_file(reply)
+        except TTSError as exc:
+            print(f"TTS failed: {exc}")
+            continue
+
+        print(f"TTS saved: {audio.path}")
+        if settings.tts.autoplay:
+            play_audio_file(audio.path)
 
 
 if __name__ == "__main__":
