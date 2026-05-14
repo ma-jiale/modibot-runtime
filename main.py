@@ -3,15 +3,24 @@ from dataclasses import dataclass
 
 from agent import AgentError, VoiceTextAgent
 from asr import ASRError, SpeechRecognizer, create_speech_recognizer
-from config import Settings, TTSSettings, load_settings
+from config import Settings, load_settings
 from recorder import RecorderError, WavRecorder
 from streaming_tts import speak_streaming_response
 from tts import TTSError, TextToSpeechProvider, create_tts_provider, play_audio_file
+from voice_activity import EnergyVAD
 
 
 EXIT_COMMANDS = {"exit", "quit", "q", "bye", "tuichu", "zaijian"}
 RESET_COMMANDS = {"reset", "/reset", "clear", "qingkong", "chongzhi"}
 VOICE_COMMANDS = {"voice", "v", "speak"}
+VOICE_EXIT_PHRASES = {
+    "\u9000\u51fa",
+    "\u9000\u51fa\u8bed\u97f3",
+    "\u9000\u51fa\u8bed\u97f3\u6a21\u5f0f",
+    "\u505c\u6b62",
+    "\u7ed3\u675f",
+    "\u518d\u89c1",
+}
 
 
 @dataclass(frozen=True)
@@ -23,6 +32,7 @@ class Runtime:
     tts_provider: TextToSpeechProvider | None
     recorder: WavRecorder
     recognizer: SpeechRecognizer
+    vad: EnergyVAD
 
 
 def main() -> int:
@@ -62,11 +72,38 @@ def main() -> int:
             continue
 
         if normalized in VOICE_COMMANDS:
-            user_text = _record_and_transcribe(runtime.recorder, runtime.recognizer)
-            if not user_text:
-                continue
+            _run_voice_loop(runtime)
+            continue
 
         _handle_user_turn(runtime, user_text)
+
+
+def _run_voice_loop(runtime: Runtime) -> None:
+    """Continuously listen for utterances until a spoken exit phrase."""
+    print("Voice mode started. Say the Chinese phrase for 'exit voice mode' to stop.")
+    while True:
+        user_text = _record_and_transcribe(
+            runtime.recorder, runtime.recognizer, runtime.vad
+        )
+        if not user_text:
+            continue
+
+        if _is_voice_exit(user_text):
+            print("Voice mode stopped.")
+            return
+
+        _handle_user_turn(runtime, user_text)
+
+
+def _is_voice_exit(text: str) -> bool:
+    """Return whether TEXT asks to leave voice mode."""
+    normalized = (
+        text.strip()
+        .replace("\u3002", "")
+        .replace("\uff01", "")
+        .replace("\uff1f", "")
+    )
+    return normalized in VOICE_EXIT_PHRASES
 
 
 def _create_runtime(settings: Settings) -> Runtime:
@@ -79,6 +116,7 @@ def _create_runtime(settings: Settings) -> Runtime:
         ),
         recorder=WavRecorder(settings.asr),
         recognizer=create_speech_recognizer(settings.asr),
+        vad=EnergyVAD(settings.asr.vad),
     )
 
 
@@ -97,11 +135,13 @@ def _print_startup(settings: Settings) -> None:
 
 
 def _record_and_transcribe(
-    recorder: WavRecorder, recognizer: SpeechRecognizer
+    recorder: WavRecorder,
+    recognizer: SpeechRecognizer,
+    vad: EnergyVAD,
 ) -> str | None:
     """Record one utterance, transcribe it, and return text."""
     try:
-        recording = recorder.record_until_enter()
+        recording = recorder.record_until_silence(vad)
         print(f"Recorded: {recording.path}")
         result = recognizer.transcribe(recording.path)
     except (RecorderError, ASRError) as exc:
@@ -144,7 +184,7 @@ def _reply_with_text(agent: VoiceTextAgent, user_text: str) -> None:
 
 
 def _reply_with_file_tts(
-    agent: VoiceTextAgent, tts_provider, user_text: str, autoplay: bool
+    agent: VoiceTextAgent, tts_provider: TextToSpeechProvider, user_text: str, autoplay: bool
 ) -> None:
     """Generate one full reply, save it as audio, and optionally play it."""
     try:
@@ -161,7 +201,10 @@ def _reply_with_file_tts(
 
 
 def _stream_reply_with_tts(
-    agent: VoiceTextAgent, tts_provider, user_text: str, chunk_chars: int
+    agent: VoiceTextAgent,
+    tts_provider: TextToSpeechProvider,
+    user_text: str,
+    chunk_chars: int,
 ) -> None:
     """Stream text into TTS audio bytes and play them in order."""
     print("Agent> ", end="", flush=True)

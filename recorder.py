@@ -1,4 +1,5 @@
 import wave
+from collections import deque
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -7,6 +8,7 @@ import numpy as np
 import sounddevice as sd
 
 from config import ASRSettings
+from voice_activity import VoiceActivityDetector
 
 
 class RecorderError(RuntimeError):
@@ -29,32 +31,77 @@ class WavRecorder:
         """Store recorder settings from ASRSettings."""
         self._settings = settings
 
-    def record_until_enter(self) -> RecordingResult:
-        """Record from the microphone until the user presses Enter."""
+    def record_until_silence(self, vad: VoiceActivityDetector) -> RecordingResult:
+        """Record one utterance, ending after sustained silence."""
+        frame_samples = _frame_samples(
+            self._settings.sample_rate, self._settings.vad.frame_ms
+        )
+        silence_frames = _frames_for_ms(
+            self._settings.vad.silence_ms, self._settings.vad.frame_ms
+        )
+        min_speech_frames = _frames_for_ms(
+            self._settings.vad.min_speech_ms, self._settings.vad.frame_ms
+        )
+        max_frames = max(
+            1,
+            round(
+                self._settings.vad.max_record_seconds
+                * 1000
+                / self._settings.vad.frame_ms
+            ),
+        )
+        preroll_frames = _frames_for_ms(
+            self._settings.vad.preroll_ms, self._settings.vad.frame_ms
+        )
+
         output_path = self._build_output_path()
-        frames: list[np.ndarray] = []
+        started = False
+        speech_frames = 0
+        quiet_frames = 0
+        captured: list[np.ndarray] = []
+        preroll: deque[np.ndarray] = deque(maxlen=preroll_frames)
 
-        def callback(indata, frames_count, time_info, status) -> None:
-            """Collect each audio block from sounddevice."""
-            if status:
-                print(f"Recorder status: {status}")
-            frames.append(indata.copy())
-
+        print("Listening... speak now.")
         try:
             with sd.InputStream(
                 samplerate=self._settings.sample_rate,
                 channels=self._settings.channels,
                 dtype="int16",
-                callback=callback,
-            ):
-                input("Recording... press Enter to stop.")
+                blocksize=frame_samples,
+            ) as stream:
+                for _ in range(max_frames):
+                    frame, overflowed = stream.read(frame_samples)
+                    if overflowed:
+                        print("Recorder warning: input overflow")
+
+                    is_speech = vad.is_speech(frame, started=started)
+                    if not started:
+                        preroll.append(frame.copy())
+                        if is_speech:
+                            print("Speech detected.")
+                            started = True
+                            captured.extend(preroll)
+                            preroll.clear()
+                        continue
+
+                    captured.append(frame.copy())
+                    if is_speech:
+                        speech_frames += 1
+                        quiet_frames = 0
+                    else:
+                        quiet_frames += 1
+                        if (
+                            speech_frames >= min_speech_frames
+                            and quiet_frames >= silence_frames
+                        ):
+                            break
         except Exception as exc:
             raise RecorderError(f"Recording failed: {exc}") from exc
 
-        if not frames:
-            raise RecorderError("No audio was recorded.")
+        if not captured:
+            raise RecorderError("No speech was detected.")
 
-        audio = np.concatenate(frames, axis=0)
+        audio = np.concatenate(captured, axis=0)
         self._write_wav(output_path, audio)
         return RecordingResult(
             path=output_path,
@@ -77,3 +124,13 @@ class WavRecorder:
             wav_file.setsampwidth(2)
             wav_file.setframerate(self._settings.sample_rate)
             wav_file.writeframes(audio.tobytes())
+
+
+def _frame_samples(sample_rate: int, frame_ms: int) -> int:
+    """Return the number of samples in one VAD frame."""
+    return max(1, round(sample_rate * frame_ms / 1000))
+
+
+def _frames_for_ms(duration_ms: int, frame_ms: int) -> int:
+    """Return how many VAD frames cover DURATION_MS."""
+    return max(1, round(duration_ms / frame_ms))

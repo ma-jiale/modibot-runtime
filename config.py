@@ -21,9 +21,17 @@ DEFAULT_ASR_LANGUAGE = "zh"
 DEFAULT_RECORDINGS_DIR = "recordings"
 DEFAULT_RECORD_SAMPLE_RATE = 16000
 DEFAULT_RECORD_CHANNELS = 1
+DEFAULT_VAD_FRAME_MS = 30
+DEFAULT_VAD_START_THRESHOLD = 0.018
+DEFAULT_VAD_END_THRESHOLD = 0.012
+DEFAULT_VAD_SILENCE_MS = 900
+DEFAULT_VAD_MIN_SPEECH_MS = 300
+DEFAULT_VAD_MAX_RECORD_SECONDS = 20.0
+DEFAULT_VAD_PREROLL_MS = 300
 DEFAULT_SYSTEM_PROMPT = (
     "You are the text prototype of a voice conversation agent. "
-    "Reply in natural, concise Chinese that is suitable for being read aloud. "
+    "Reply in natural, concise Simplified Chinese that is suitable for being read aloud. "
+    "Do not use Traditional Chinese unless the user explicitly asks for it. "
     "If the user's request is unclear, ask one short clarifying question first."
 )
 VALID_API_MODES = {"chat", "responses"}
@@ -73,6 +81,20 @@ class ASRSettings:
     recordings_dir: str
     sample_rate: int
     channels: int
+    vad: "VADSettings"
+
+
+@dataclass(frozen=True)
+class VADSettings:
+    """Runtime configuration for voice activity detection."""
+
+    frame_ms: int
+    start_threshold: float
+    end_threshold: float
+    silence_ms: int
+    min_speech_ms: int
+    max_record_seconds: float
+    preroll_ms: int
 
 
 def load_settings() -> Settings:
@@ -161,6 +183,26 @@ def _read_asr_settings() -> ASRSettings:
             "RECORD_SAMPLE_RATE", DEFAULT_RECORD_SAMPLE_RATE
         ),
         channels=_read_positive_int("RECORD_CHANNELS", DEFAULT_RECORD_CHANNELS),
+        vad=_read_vad_settings(),
+    )
+
+
+def _read_vad_settings() -> VADSettings:
+    """Load energy-based VAD settings."""
+    return VADSettings(
+        frame_ms=_read_positive_int("VAD_FRAME_MS", DEFAULT_VAD_FRAME_MS),
+        start_threshold=_read_float(
+            "VAD_START_THRESHOLD", DEFAULT_VAD_START_THRESHOLD
+        ),
+        end_threshold=_read_float("VAD_END_THRESHOLD", DEFAULT_VAD_END_THRESHOLD),
+        silence_ms=_read_positive_int("VAD_SILENCE_MS", DEFAULT_VAD_SILENCE_MS),
+        min_speech_ms=_read_positive_int(
+            "VAD_MIN_SPEECH_MS", DEFAULT_VAD_MIN_SPEECH_MS
+        ),
+        max_record_seconds=_read_float(
+            "VAD_MAX_RECORD_SECONDS", DEFAULT_VAD_MAX_RECORD_SECONDS
+        ),
+        preroll_ms=_read_positive_int("VAD_PREROLL_MS", DEFAULT_VAD_PREROLL_MS),
     )
 
 

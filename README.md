@@ -28,6 +28,12 @@ MINIMAX_API_MODE=chat
 MAX_HISTORY_TURNS=20
 ```
 
+If you override `AGENT_SYSTEM_PROMPT`, keep the Simplified Chinese requirement:
+
+```env
+AGENT_SYSTEM_PROMPT=Reply in concise Simplified Chinese. Do not use Traditional Chinese unless explicitly requested.
+```
+
 ## Run
 
 ```powershell
@@ -45,9 +51,10 @@ Commands:
 The ASR module uses a generic recognizer interface. The first provider is
 `faster-whisper`, which runs locally and does not need an ASR API key.
 
-MVP voice input uses "press Enter to start from the `voice` command, press Enter
-again to stop recording". A true push-to-talk hotkey can be added on top of the
-same recorder and ASR interfaces later.
+The `voice` command enters a continuous voice loop. The recorder listens for
+speech, stops automatically after sustained silence, transcribes the saved WAV,
+sends the text to the agent, plays the answer, and then starts listening again.
+Say `退出语音模式` to leave voice mode.
 
 ```env
 ASR_PROVIDER=faster-whisper
@@ -58,6 +65,13 @@ ASR_LANGUAGE=zh
 RECORDINGS_DIR=recordings
 RECORD_SAMPLE_RATE=16000
 RECORD_CHANNELS=1
+VAD_FRAME_MS=30
+VAD_START_THRESHOLD=0.018
+VAD_END_THRESHOLD=0.012
+VAD_SILENCE_MS=900
+VAD_MIN_SPEECH_MS=300
+VAD_MAX_RECORD_SECONDS=20
+VAD_PREROLL_MS=300
 ```
 
 Notes:
@@ -67,6 +81,8 @@ Notes:
 - The first run downloads the model.
 - Recordings are saved in `recordings/`, which is ignored by git.
 - If recording fails on Windows, try `RECORD_SAMPLE_RATE=44100` to match your microphone device.
+- Raise `VAD_START_THRESHOLD` if background noise starts recordings too easily.
+- Lower `VAD_START_THRESHOLD` if speech is not detected.
 
 ## Text To Speech
 
@@ -101,6 +117,7 @@ Notes:
 - `config.py`: environment variable loading and validation
 - `recorder.py`: microphone recording and WAV saving
 - `asr.py`: generic ASR interface plus faster-whisper provider
+- `voice_activity.py`: energy-based voice activity detection
 - `tts.py`: generic TTS interface plus the Windows system provider
 - `streaming_tts.py`: streaming text chunking, TTS byte generation, and ordered audio playback
 - `.env.example`: local configuration template; never commit real `.env` values
