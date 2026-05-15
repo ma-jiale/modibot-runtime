@@ -4,7 +4,7 @@ import sounddevice as sd
 
 from config import load_asr_settings
 from recorder import RecorderError, WavRecorder
-from voice_activity import EnergyVAD
+from voice_activity import VADError, create_vad
 
 
 def main() -> int:
@@ -21,11 +21,17 @@ def main() -> int:
     print(f"Configured microphone: {settings.record_device or 'system default'}")
     print(f"Sample rate: {settings.sample_rate}")
     print(f"Channels: {settings.channels}")
+    print(f"TEN VAD hop size: {settings.vad.hop_size}")
     print()
     print("Speak after the listening prompt. The test stops after silence.")
 
     recorder = WavRecorder(settings)
-    vad = EnergyVAD(settings.vad)
+    try:
+        vad = create_vad(settings.vad)
+    except VADError as exc:
+        print(f"VAD error: {exc}")
+        return 1
+
     try:
         recording = recorder.record_until_silence(vad)
     except RecorderError as exc:

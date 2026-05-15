@@ -19,10 +19,10 @@ DEFAULT_RECORD_DEVICE = "plughw:3,0"
 DEFAULT_RECORDINGS_DIR = "recordings"
 DEFAULT_RECORD_SAMPLE_RATE = 16000
 DEFAULT_RECORD_CHANNELS = 1
-DEFAULT_VAD_FRAME_MS = 30
-DEFAULT_VAD_START_THRESHOLD = 0.018
-DEFAULT_VAD_END_THRESHOLD = 0.012
-DEFAULT_VAD_START_MS = 180
+DEFAULT_TEN_VAD_HOP_SIZE = 256
+DEFAULT_TEN_VAD_START_THRESHOLD = 0.5
+DEFAULT_TEN_VAD_END_THRESHOLD = 0.35
+DEFAULT_VAD_START_MS = 300
 DEFAULT_VAD_SILENCE_MS = 900
 DEFAULT_VAD_MIN_SPEECH_MS = 300
 DEFAULT_VAD_MAX_RECORD_SECONDS = 20.0
@@ -72,9 +72,9 @@ class ASRSettings:
 
 @dataclass(frozen=True)
 class VADSettings:
-    """Runtime configuration for voice activity detection."""
+    """Runtime configuration for TEN voice activity detection."""
 
-    frame_ms: int
+    hop_size: int
     start_threshold: float
     end_threshold: float
     start_ms: int
@@ -159,13 +159,15 @@ def _read_asr_settings() -> ASRSettings:
 
 
 def _read_vad_settings() -> VADSettings:
-    """Load energy-based VAD settings."""
+    """Load TEN VAD settings."""
     return VADSettings(
-        frame_ms=_read_positive_int("VAD_FRAME_MS", DEFAULT_VAD_FRAME_MS),
-        start_threshold=_read_float(
-            "VAD_START_THRESHOLD", DEFAULT_VAD_START_THRESHOLD
+        hop_size=_read_valid_ten_vad_hop_size(),
+        start_threshold=_read_probability(
+            "TEN_VAD_START_THRESHOLD", DEFAULT_TEN_VAD_START_THRESHOLD
         ),
-        end_threshold=_read_float("VAD_END_THRESHOLD", DEFAULT_VAD_END_THRESHOLD),
+        end_threshold=_read_probability(
+            "TEN_VAD_END_THRESHOLD", DEFAULT_TEN_VAD_END_THRESHOLD
+        ),
         start_ms=_read_positive_int("VAD_START_MS", DEFAULT_VAD_START_MS),
         silence_ms=_read_positive_int("VAD_SILENCE_MS", DEFAULT_VAD_SILENCE_MS),
         min_speech_ms=_read_positive_int(
@@ -251,12 +253,28 @@ def _read_float(name: str, default: float) -> float:
         raise RuntimeError(f"{name} must be a number.") from exc
 
 
+def _read_probability(name: str, default: float) -> float:
+    """Return environment variable NAME as a probability in the range 0..1."""
+    value = _read_float(name, default)
+    if not 0 <= value <= 1:
+        raise RuntimeError(f"{name} must be between 0 and 1.")
+    return value
+
+
 def _read_positive_float(name: str, default: float) -> float:
     """Return environment variable NAME as a positive float, or DEFAULT."""
     value = _read_float(name, default)
     if value <= 0:
         raise RuntimeError(f"{name} must be greater than 0.")
     return value
+
+
+def _read_valid_ten_vad_hop_size() -> int:
+    """Return a supported TEN VAD hop size."""
+    hop_size = _read_positive_int("TEN_VAD_HOP_SIZE", DEFAULT_TEN_VAD_HOP_SIZE)
+    if hop_size not in {160, 256}:
+        raise RuntimeError("TEN_VAD_HOP_SIZE must be 160 or 256.")
+    return hop_size
 
 
 def _normalize_base_url(raw_url: str) -> str | None:

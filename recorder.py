@@ -33,28 +33,27 @@ class WavRecorder:
 
     def record_until_silence(self, vad: VoiceActivityDetector) -> RecordingResult:
         """Record one utterance, ending after sustained silence."""
-        frame_samples = _frame_samples(
-            self._settings.sample_rate, self._settings.vad.frame_ms
-        )
+        frame_samples = vad.frame_samples
+        frame_ms = _frame_ms(self._settings.sample_rate, frame_samples)
         silence_frames = _frames_for_ms(
-            self._settings.vad.silence_ms, self._settings.vad.frame_ms
+            self._settings.vad.silence_ms, frame_ms
         )
         start_frames = _frames_for_ms(
-            self._settings.vad.start_ms, self._settings.vad.frame_ms
+            self._settings.vad.start_ms, frame_ms
         )
         min_speech_frames = _frames_for_ms(
-            self._settings.vad.min_speech_ms, self._settings.vad.frame_ms
+            self._settings.vad.min_speech_ms, frame_ms
         )
         max_frames = max(
             1,
             round(
                 self._settings.vad.max_record_seconds
                 * 1000
-                / self._settings.vad.frame_ms
+                / frame_ms
             ),
         )
         preroll_frames = _frames_for_ms(
-            self._settings.vad.preroll_ms, self._settings.vad.frame_ms
+            self._settings.vad.preroll_ms, frame_ms
         )
 
         output_path = self._build_output_path()
@@ -136,11 +135,11 @@ class WavRecorder:
             wav_file.writeframes(audio.tobytes())
 
 
-def _frame_samples(sample_rate: int, frame_ms: int) -> int:
-    """Return the number of samples in one VAD frame."""
-    return max(1, round(sample_rate * frame_ms / 1000))
+def _frame_ms(sample_rate: int, frame_samples: int) -> float:
+    """Return how many milliseconds one VAD frame covers."""
+    return frame_samples * 1000 / sample_rate
 
 
-def _frames_for_ms(duration_ms: int, frame_ms: int) -> int:
+def _frames_for_ms(duration_ms: int, frame_ms: float) -> int:
     """Return how many VAD frames cover DURATION_MS."""
     return max(1, round(duration_ms / frame_ms))

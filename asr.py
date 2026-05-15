@@ -3,7 +3,7 @@ import json
 from pathlib import Path
 from typing import Protocol
 from urllib.error import HTTPError, URLError
-from urllib.request import Request, urlopen
+from urllib.request import ProxyHandler, Request, build_opener
 from uuid import uuid4
 
 from config import ASRSettings
@@ -103,7 +103,9 @@ class RemoteASR:
 
         request = self._build_request(audio_path)
         try:
-            with urlopen(request, timeout=self._settings.remote_timeout) as response:
+            with _no_proxy_opener().open(
+                request, timeout=self._settings.remote_timeout
+            ) as response:
                 payload = json.loads(response.read().decode("utf-8"))
         except HTTPError as exc:
             detail = _read_http_error_detail(exc)
@@ -186,6 +188,11 @@ def _build_multipart_body(
         ]
     )
     return b"".join(lines)
+
+
+def _no_proxy_opener():
+    """Return an opener that ignores system proxy variables for LAN ASR."""
+    return build_opener(ProxyHandler({}))
 
 
 def _read_http_error_detail(exc: HTTPError) -> str:

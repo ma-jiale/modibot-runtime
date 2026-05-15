@@ -4,7 +4,7 @@ from agent import AgentError, VoiceTextAgent
 from asr import ASRError, SpeechRecognizer, create_speech_recognizer
 from config import Settings, load_settings
 from recorder import RecorderError, WavRecorder
-from voice_activity import EnergyVAD
+from voice_activity import VADError, VoiceActivityDetector, create_vad
 
 
 EXIT_COMMANDS = {"exit", "quit", "q", "bye", "tuichu", "zaijian"}
@@ -28,7 +28,7 @@ class Runtime:
     agent: VoiceTextAgent
     recorder: WavRecorder
     recognizer: SpeechRecognizer
-    vad: EnergyVAD
+    vad: VoiceActivityDetector
 
 
 def main() -> int:
@@ -44,7 +44,11 @@ def main() -> int:
         print(f"Config error: {exc}")
         return 1
 
-    runtime = _create_runtime(settings)
+    try:
+        runtime = _create_runtime(settings)
+    except VADError as exc:
+        print(f"VAD error: {exc}")
+        return 1
     _print_startup(runtime.settings)
 
     while True:
@@ -109,7 +113,7 @@ def _create_runtime(settings: Settings) -> Runtime:
         agent=VoiceTextAgent(settings),
         recorder=WavRecorder(settings.asr),
         recognizer=create_speech_recognizer(settings.asr),
-        vad=EnergyVAD(settings.asr.vad),
+        vad=create_vad(settings.asr.vad),
     )
 
 
@@ -126,13 +130,14 @@ def _print_startup(settings: Settings) -> None:
         print(f"ASR URL: {settings.asr.remote_url}")
     if settings.asr.record_device:
         print(f"Microphone: {settings.asr.record_device}")
+    print("VAD: TEN VAD")
     print("Type voice to record, exit/quit to stop, or reset/clear to clear history.")
 
 
 def _record_and_transcribe(
     recorder: WavRecorder,
     recognizer: SpeechRecognizer,
-    vad: EnergyVAD,
+    vad: VoiceActivityDetector,
 ) -> str | None:
     """Record one utterance, transcribe it, and return text."""
     try:
