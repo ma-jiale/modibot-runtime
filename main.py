@@ -4,6 +4,7 @@ from agent import AgentError, VoiceTextAgent
 from asr import ASRError, SpeechRecognizer, create_speech_recognizer
 from config import Settings, load_settings
 from recorder import RecorderError, WavRecorder
+from tts import TTSError, TextToSpeech, create_text_to_speech
 from voice_activity import VADError, VoiceActivityDetector, create_vad
 
 
@@ -29,6 +30,7 @@ class Runtime:
     recorder: WavRecorder
     recognizer: SpeechRecognizer
     vad: VoiceActivityDetector
+    tts: TextToSpeech
 
 
 def main() -> int:
@@ -114,6 +116,7 @@ def _create_runtime(settings: Settings) -> Runtime:
         recorder=WavRecorder(settings.asr),
         recognizer=create_speech_recognizer(settings.asr),
         vad=create_vad(settings.asr.vad),
+        tts=create_text_to_speech(settings.tts),
     )
 
 
@@ -131,6 +134,10 @@ def _print_startup(settings: Settings) -> None:
     if settings.asr.record_device:
         print(f"Microphone: {settings.asr.record_device}")
     print("VAD: TEN VAD")
+    print(f"TTS: {settings.tts.provider}")
+    if settings.tts.provider != "none":
+        print(f"TTS speaker: {settings.tts.speaker}")
+        print(f"TTS output: {settings.tts.output_device or 'system default'}")
     print("Type voice to record, exit/quit to stop, or reset/clear to clear history.")
 
 
@@ -153,19 +160,28 @@ def _record_and_transcribe(
 
 
 def _handle_user_turn(runtime: Runtime, user_text: str) -> None:
-    """Route one user turn through the text-only assistant."""
-    _reply_with_text(runtime.agent, user_text)
+    """Route one user turn through the assistant and TTS playback."""
+    _reply_with_text(runtime.agent, runtime.tts, user_text)
 
 
-def _reply_with_text(agent: VoiceTextAgent, user_text: str) -> None:
-    """Print one non-streaming assistant reply."""
+def _reply_with_text(agent: VoiceTextAgent, tts: TextToSpeech, user_text: str) -> None:
+    """Stream one assistant reply to the terminal and speech output."""
     try:
-        reply = agent.chat(user_text)
+        print("Agent> ", end="", flush=True)
+        tts.speak_stream(
+            agent.stream_chat(user_text),
+            on_text=lambda chunk: print(chunk, end="", flush=True),
+        )
     except AgentError as exc:
+        print()
         print(f"Request failed: {exc}")
         return
+    except TTSError as exc:
+        print()
+        print(f"TTS failed: {exc}")
+        return
 
-    print(f"Agent> {reply}")
+    print()
 
 
 if __name__ == "__main__":

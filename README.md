@@ -5,7 +5,8 @@ from a ReSpeaker 2-Mics Pi HAT, uses TEN VAD for local voice turn detection,
 sends the WAV file to a LAN ASR server, sends the recognized text to an
 OpenAI-compatible chat API, and prints the assistant reply in the terminal.
 
-TTS is intentionally not implemented in this client yet.
+TTS is disabled by default. Assistant replies can optionally be streamed to
+Doubao TTS 2.0 for local audio playback.
 
 ## Raspberry Pi Setup
 
@@ -101,6 +102,31 @@ Verify the Python audio path:
 python pi_audio_check.py
 ```
 
+## Streaming TTS
+
+By default, TTS is disabled and assistant replies are printed as text. To enable
+Doubao TTS 2.0 streaming playback, install the normal client requirements and
+set:
+
+```env
+TTS_PROVIDER=doubao
+DOUBAO_TTS_API_KEY=your_doubao_tts_api_key_here
+DOUBAO_TTS_RESOURCE_ID=seed-tts-2.0
+DOUBAO_TTS_SPEAKER=zh_female_cancan_mars_bigtts
+TTS_AUDIO_FORMAT=pcm
+TTS_SAMPLE_RATE=24000
+TTS_CHANNELS=1
+```
+
+The client uses the new Volcengine console authentication headers
+(`X-Api-Key` and `X-Api-Resource-Id`). Audio playback uses the system default
+output device unless `TTS_OUTPUT_DEVICE` is set. On Raspberry Pi, first confirm
+that normal playback works:
+
+```bash
+aplay test.wav
+```
+
 ## Run The Agent
 
 ```bash
@@ -167,6 +193,7 @@ curl -v --noproxy '*' http://192.168.1.100:8000/health
 - `config.py`: environment variable loading and validation
 - `recorder.py`: ReSpeaker microphone recording and WAV saving
 - `voice_activity.py`: TEN VAD integration
+- `tts.py`: optional Doubao bidirectional streaming TTS and PCM playback
 - `asr.py`: remote ASR client used by the Raspberry Pi
 - `asr_server.py`: LAN HTTP ASR server for GPU-backed transcription
 - `server_asr.py`: faster-whisper provider used by the ASR server

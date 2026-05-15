@@ -27,6 +27,18 @@ DEFAULT_VAD_SILENCE_MS = 900
 DEFAULT_VAD_MIN_SPEECH_MS = 300
 DEFAULT_VAD_MAX_RECORD_SECONDS = 20.0
 DEFAULT_VAD_PREROLL_MS = 300
+DEFAULT_TTS_PROVIDER = "none"
+DEFAULT_DOUBAO_TTS_ENDPOINT = "wss://openspeech.bytedance.com/api/v3/tts/bidirection"
+DEFAULT_DOUBAO_TTS_RESOURCE_ID = "seed-tts-2.0"
+DEFAULT_DOUBAO_TTS_SPEAKER = "zh_female_cancan_mars_bigtts"
+DEFAULT_TTS_USER_UID = "voice-agent"
+DEFAULT_TTS_AUDIO_FORMAT = "pcm"
+DEFAULT_TTS_SAMPLE_RATE = 24000
+DEFAULT_TTS_CHANNELS = 1
+DEFAULT_TTS_SPEECH_RATE = 0
+DEFAULT_TTS_LOUDNESS_RATE = 0
+DEFAULT_TTS_CONNECT_TIMEOUT = 10.0
+DEFAULT_TTS_SESSION_TIMEOUT = 120.0
 DEFAULT_SYSTEM_PROMPT = (
     "You are the text prototype of a voice conversation agent. "
     "Reply in natural, concise Simplified Chinese that is suitable for being read aloud. "
@@ -34,6 +46,8 @@ DEFAULT_SYSTEM_PROMPT = (
     "If the user's request is unclear, ask one short clarifying question first."
 )
 VALID_API_MODES = {"chat", "responses"}
+VALID_TTS_PROVIDERS = {"none", "doubao"}
+VALID_TTS_AUDIO_FORMATS = {"pcm"}
 
 
 @dataclass(frozen=True)
@@ -49,6 +63,7 @@ class Settings:
     default_headers: dict[str, str]
     max_history_turns: int
     asr: "ASRSettings"
+    tts: "TTSSettings"
 
 
 @dataclass(frozen=True)
@@ -91,6 +106,26 @@ class VADSettings:
     preroll_ms: int
 
 
+@dataclass(frozen=True)
+class TTSSettings:
+    """Runtime configuration for assistant speech playback."""
+
+    provider: str
+    api_key: str | None
+    endpoint: str
+    resource_id: str
+    speaker: str
+    user_uid: str
+    audio_format: str
+    sample_rate: int
+    channels: int
+    output_device: str | None
+    speech_rate: int
+    loudness_rate: int
+    connect_timeout: float
+    session_timeout: float
+
+
 def load_settings() -> Settings:
     """Load and validate app settings from .env and the process environment.
 
@@ -124,6 +159,7 @@ def load_settings() -> Settings:
             "MAX_HISTORY_TURNS", DEFAULT_MAX_HISTORY_TURNS
         ),
         asr=_read_asr_settings(),
+        tts=_read_tts_settings(),
     )
 
 
@@ -195,6 +231,56 @@ def _read_vad_settings() -> VADSettings:
             "VAD_MAX_RECORD_SECONDS", DEFAULT_VAD_MAX_RECORD_SECONDS
         ),
         preroll_ms=_read_positive_int("VAD_PREROLL_MS", DEFAULT_VAD_PREROLL_MS),
+    )
+
+
+def _read_tts_settings() -> TTSSettings:
+    """Load text-to-speech settings."""
+    provider = _read_first_env("TTS_PROVIDER", default=DEFAULT_TTS_PROVIDER).lower()
+    if provider not in VALID_TTS_PROVIDERS:
+        valid_providers = ", ".join(sorted(VALID_TTS_PROVIDERS))
+        raise RuntimeError(f"TTS_PROVIDER must be one of: {valid_providers}.")
+
+    audio_format = _read_first_env(
+        "TTS_AUDIO_FORMAT", default=DEFAULT_TTS_AUDIO_FORMAT
+    ).lower()
+    if audio_format not in VALID_TTS_AUDIO_FORMATS:
+        valid_formats = ", ".join(sorted(VALID_TTS_AUDIO_FORMATS))
+        raise RuntimeError(f"TTS_AUDIO_FORMAT must be one of: {valid_formats}.")
+
+    api_key = _read_first_env("DOUBAO_TTS_API_KEY", "VOLCENGINE_TTS_API_KEY") or None
+    if provider == "doubao" and not api_key:
+        raise RuntimeError("DOUBAO_TTS_API_KEY is required when TTS_PROVIDER=doubao.")
+
+    return TTSSettings(
+        provider=provider,
+        api_key=api_key,
+        endpoint=_read_first_env(
+            "DOUBAO_TTS_ENDPOINT", default=DEFAULT_DOUBAO_TTS_ENDPOINT
+        ),
+        resource_id=_read_first_env(
+            "DOUBAO_TTS_RESOURCE_ID", default=DEFAULT_DOUBAO_TTS_RESOURCE_ID
+        ),
+        speaker=_read_first_env(
+            "DOUBAO_TTS_SPEAKER", default=DEFAULT_DOUBAO_TTS_SPEAKER
+        ),
+        user_uid=_read_first_env("TTS_USER_UID", default=DEFAULT_TTS_USER_UID),
+        audio_format=audio_format,
+        sample_rate=_read_positive_int("TTS_SAMPLE_RATE", DEFAULT_TTS_SAMPLE_RATE),
+        channels=_read_positive_int("TTS_CHANNELS", DEFAULT_TTS_CHANNELS),
+        output_device=_read_optional_env("TTS_OUTPUT_DEVICE"),
+        speech_rate=_read_int_in_range(
+            "TTS_SPEECH_RATE", DEFAULT_TTS_SPEECH_RATE, -50, 100
+        ),
+        loudness_rate=_read_int_in_range(
+            "TTS_LOUDNESS_RATE", DEFAULT_TTS_LOUDNESS_RATE, -50, 100
+        ),
+        connect_timeout=_read_positive_float(
+            "TTS_CONNECT_TIMEOUT", DEFAULT_TTS_CONNECT_TIMEOUT
+        ),
+        session_timeout=_read_positive_float(
+            "TTS_SESSION_TIMEOUT", DEFAULT_TTS_SESSION_TIMEOUT
+        ),
     )
 
 
@@ -276,6 +362,22 @@ def _read_probability(name: str, default: float) -> float:
     value = _read_float(name, default)
     if not 0 <= value <= 1:
         raise RuntimeError(f"{name} must be between 0 and 1.")
+    return value
+
+
+def _read_int_in_range(name: str, default: int, minimum: int, maximum: int) -> int:
+    """Return environment variable NAME as an int within MINIMUM..MAXIMUM."""
+    raw_value = os.getenv(name, "").strip()
+    if not raw_value:
+        return default
+
+    try:
+        value = int(raw_value)
+    except ValueError as exc:
+        raise RuntimeError(f"{name} must be an integer.") from exc
+
+    if not minimum <= value <= maximum:
+        raise RuntimeError(f"{name} must be between {minimum} and {maximum}.")
     return value
 
 
