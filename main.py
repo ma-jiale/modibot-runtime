@@ -80,7 +80,7 @@ def main() -> int:
 
 def _run_voice_loop(runtime: Runtime) -> None:
     """Continuously listen for utterances until a spoken exit phrase."""
-    print("Voice mode started. Say the Chinese phrase for 'exit voice mode' to stop.")
+    print("Voice mode started. Say the voice-exit phrase to stop.")
     while True:
         user_text = _record_and_transcribe(
             runtime.recorder, runtime.recognizer, runtime.vad
@@ -119,7 +119,7 @@ def _create_runtime(settings: Settings) -> Runtime:
 
 def _print_startup(settings: Settings) -> None:
     """Print configuration that is safe to show in the terminal."""
-    print("Text conversation agent started.")
+    print("Raspberry Pi voice agent started.")
     print(f"Provider: {settings.provider}")
     print(f"Model: {settings.model}")
     print(f"API mode: {settings.api_mode}")

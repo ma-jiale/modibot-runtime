@@ -29,6 +29,7 @@ class TenVAD:
     """TEN VAD wrapper for frame-level speech probability detection."""
 
     settings: VADSettings
+    _vad: object | None = None
 
     def __post_init__(self) -> None:
         """Load the TEN VAD Python extension and initialize the detector."""
@@ -59,6 +60,9 @@ class TenVAD:
 
     def speech_probability(self, frame: np.ndarray) -> float:
         """Return TEN VAD speech probability for one frame."""
+        if self._vad is None:
+            raise VADError("TEN VAD was not initialized.")
+
         samples = _to_mono_int16(frame)
         if samples.size != self.settings.hop_size:
             raise VADError(

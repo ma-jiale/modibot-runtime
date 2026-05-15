@@ -10,15 +10,15 @@ DEFAULT_BASE_URL = "https://api.minimaxi.com/v1"
 DEFAULT_MAX_HISTORY_TURNS = 20
 DEFAULT_API_MODE = "chat"
 DEFAULT_ASR_PROVIDER = "remote"
-DEFAULT_ASR_MODEL_SIZE = "base"
-DEFAULT_ASR_DEVICE = "cpu"
-DEFAULT_ASR_COMPUTE_TYPE = "int8"
 DEFAULT_ASR_LANGUAGE = "zh"
 DEFAULT_ASR_REMOTE_TIMEOUT = 60.0
-DEFAULT_RECORD_DEVICE = "plughw:3,0"
+DEFAULT_RECORD_DEVICE = "seeed2micvoicec"
 DEFAULT_RECORDINGS_DIR = "recordings"
 DEFAULT_RECORD_SAMPLE_RATE = 16000
 DEFAULT_RECORD_CHANNELS = 1
+DEFAULT_SERVER_ASR_MODEL_SIZE = "medium"
+DEFAULT_SERVER_ASR_DEVICE = "cuda"
+DEFAULT_SERVER_ASR_COMPUTE_TYPE = "float16"
 DEFAULT_TEN_VAD_HOP_SIZE = 256
 DEFAULT_TEN_VAD_START_THRESHOLD = 0.5
 DEFAULT_TEN_VAD_END_THRESHOLD = 0.35
@@ -56,9 +56,6 @@ class ASRSettings:
     """Runtime configuration for speech-to-text and recording."""
 
     provider: str
-    model_size: str
-    device: str
-    compute_type: str
     language: str | None
     remote_url: str | None
     remote_timeout: float
@@ -68,6 +65,16 @@ class ASRSettings:
     sample_rate: int
     channels: int
     vad: "VADSettings"
+
+
+@dataclass(frozen=True)
+class ServerASRSettings:
+    """Runtime configuration for the GPU ASR server."""
+
+    model_size: str
+    device: str
+    compute_type: str
+    language: str | None
 
 
 @dataclass(frozen=True)
@@ -126,6 +133,24 @@ def load_asr_settings() -> ASRSettings:
     return _read_asr_settings()
 
 
+def load_server_asr_settings() -> ServerASRSettings:
+    """Load only server-side faster-whisper settings."""
+    load_dotenv()
+    return ServerASRSettings(
+        model_size=_read_first_env(
+            "ASR_MODEL_SIZE", default=DEFAULT_SERVER_ASR_MODEL_SIZE
+        ),
+        device=_normalize_asr_device(
+            _read_first_env("ASR_DEVICE", default=DEFAULT_SERVER_ASR_DEVICE)
+        ),
+        compute_type=_read_first_env(
+            "ASR_COMPUTE_TYPE", default=DEFAULT_SERVER_ASR_COMPUTE_TYPE
+        ),
+        language=_read_first_env("ASR_LANGUAGE", default=DEFAULT_ASR_LANGUAGE)
+        or None,
+    )
+
+
 def _read_asr_settings() -> ASRSettings:
     """Load speech-to-text and recorder settings."""
     language = _read_first_env("ASR_LANGUAGE", default=DEFAULT_ASR_LANGUAGE)
@@ -133,13 +158,6 @@ def _read_asr_settings() -> ASRSettings:
     remote_api_key = _read_first_env("ASR_REMOTE_API_KEY") or None
     return ASRSettings(
         provider=_read_first_env("ASR_PROVIDER", default=DEFAULT_ASR_PROVIDER).lower(),
-        model_size=_read_first_env("ASR_MODEL_SIZE", default=DEFAULT_ASR_MODEL_SIZE),
-        device=_normalize_asr_device(
-            _read_first_env("ASR_DEVICE", default=DEFAULT_ASR_DEVICE)
-        ),
-        compute_type=_read_first_env(
-            "ASR_COMPUTE_TYPE", default=DEFAULT_ASR_COMPUTE_TYPE
-        ),
         language=language or None,
         remote_url=remote_url,
         remote_timeout=_read_positive_float(

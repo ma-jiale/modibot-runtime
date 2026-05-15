@@ -115,7 +115,7 @@ Commands:
 
 In voice mode, the program records one utterance, uploads it to the remote ASR
 server, prints the recognized text, sends it to the LLM, and prints the reply.
-Say `退出语音模式` to leave voice mode.
+Say the voice-exit phrase to leave voice mode.
 
 ## Remote ASR Server
 
@@ -167,8 +167,9 @@ curl -v --noproxy '*' http://192.168.1.100:8000/health
 - `config.py`: environment variable loading and validation
 - `recorder.py`: ReSpeaker microphone recording and WAV saving
 - `voice_activity.py`: TEN VAD integration
-- `asr.py`: remote ASR client plus optional faster-whisper provider
+- `asr.py`: remote ASR client used by the Raspberry Pi
 - `asr_server.py`: LAN HTTP ASR server for GPU-backed transcription
+- `server_asr.py`: faster-whisper provider used by the ASR server
 - `pi_audio_check.py`: Raspberry Pi microphone diagnostics
 - `vad_probe.py`: TEN VAD probability measurement tool
 - `.env.example`: local configuration template; never commit real `.env` values

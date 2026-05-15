@@ -35,26 +35,16 @@ class WavRecorder:
         """Record one utterance, ending after sustained silence."""
         frame_samples = vad.frame_samples
         frame_ms = _frame_ms(self._settings.sample_rate, frame_samples)
-        silence_frames = _frames_for_ms(
-            self._settings.vad.silence_ms, frame_ms
-        )
-        start_frames = _frames_for_ms(
-            self._settings.vad.start_ms, frame_ms
-        )
-        min_speech_frames = _frames_for_ms(
-            self._settings.vad.min_speech_ms, frame_ms
-        )
+        silence_frames = _frames_for_ms(self._settings.vad.silence_ms, frame_ms)
+        start_frames = _frames_for_ms(self._settings.vad.start_ms, frame_ms)
+        min_speech_frames = _frames_for_ms(self._settings.vad.min_speech_ms, frame_ms)
         max_frames = max(
             1,
             round(
-                self._settings.vad.max_record_seconds
-                * 1000
-                / frame_ms
+                self._settings.vad.max_record_seconds * 1000 / frame_ms
             ),
         )
-        preroll_frames = _frames_for_ms(
-            self._settings.vad.preroll_ms, frame_ms
-        )
+        preroll_frames = _frames_for_ms(self._settings.vad.preroll_ms, frame_ms)
 
         output_path = self._build_output_path()
         started = False
@@ -80,6 +70,8 @@ class WavRecorder:
 
                     is_speech = vad.is_speech(frame, started=started)
                     if not started:
+                        # Keep a small pre-roll so the saved WAV includes the
+                        # beginning of speech after the start gate opens.
                         preroll.append(frame.copy())
                         if is_speech:
                             pending_speech_frames += 1

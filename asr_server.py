@@ -5,14 +5,10 @@ from typing import Annotated
 
 from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, UploadFile
 
-from asr import FasterWhisperASR
-from config import ASRSettings, VADSettings
+from config import ServerASRSettings, load_server_asr_settings
+from server_asr import FasterWhisperASR
 
 
-DEFAULT_SERVER_MODEL_SIZE = "medium"
-DEFAULT_SERVER_DEVICE = "cuda"
-DEFAULT_SERVER_COMPUTE_TYPE = "float16"
-DEFAULT_SERVER_LANGUAGE = "zh"
 DEFAULT_SERVER_MAX_UPLOAD_MB = 32
 
 app = FastAPI(title="Voice Agent ASR Server")
@@ -66,32 +62,9 @@ async def transcribe(
     }
 
 
-def _read_server_settings() -> ASRSettings:
-    """Return ASR settings for the server-side faster-whisper model."""
-    return ASRSettings(
-        provider="faster-whisper",
-        model_size=_read_env("ASR_MODEL_SIZE", DEFAULT_SERVER_MODEL_SIZE),
-        device=_normalize_device(_read_env("ASR_DEVICE", DEFAULT_SERVER_DEVICE)),
-        compute_type=_read_env("ASR_COMPUTE_TYPE", DEFAULT_SERVER_COMPUTE_TYPE),
-        language=_read_env("ASR_LANGUAGE", DEFAULT_SERVER_LANGUAGE) or None,
-        remote_url=None,
-        remote_timeout=60.0,
-        remote_api_key=None,
-        record_device=None,
-        recordings_dir="recordings",
-        sample_rate=16000,
-        channels=1,
-        vad=VADSettings(
-            hop_size=256,
-            start_threshold=0.5,
-            end_threshold=0.35,
-            start_ms=300,
-            silence_ms=900,
-            min_speech_ms=300,
-            max_record_seconds=20.0,
-            preroll_ms=300,
-        ),
-    )
+def _read_server_settings() -> ServerASRSettings:
+    """Return faster-whisper settings for the ASR server process."""
+    return load_server_asr_settings()
 
 
 def _check_authorization(authorization: str | None) -> None:
@@ -136,11 +109,6 @@ def _check_upload_size(size: int) -> None:
         )
 
 
-def _read_env(name: str, default: str) -> str:
-    """Return environment variable NAME or DEFAULT."""
-    return os.getenv(name, default).strip()
-
-
 def _read_positive_int(name: str, default: int) -> int:
     """Return environment variable NAME as a positive int, or DEFAULT."""
     raw_value = os.getenv(name, "").strip()
@@ -155,11 +123,3 @@ def _read_positive_int(name: str, default: int) -> int:
     if value <= 0:
         raise RuntimeError(f"{name} must be greater than 0.")
     return value
-
-
-def _normalize_device(device: str) -> str:
-    """Return the faster-whisper device name for common user aliases."""
-    normalized = device.strip().lower()
-    if normalized == "gpu":
-        return "cuda"
-    return normalized

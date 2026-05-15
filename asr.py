@@ -15,7 +15,7 @@ class ASRError(RuntimeError):
 
 @dataclass(frozen=True)
 class TranscriptionResult:
-    """The recognized text and lightweight metadata from an ASR request."""
+    """Text and lightweight metadata returned by a transcription provider."""
 
     text: str
     language: str | None
@@ -23,81 +23,23 @@ class TranscriptionResult:
 
 
 class SpeechRecognizer(Protocol):
-    """Common interface implemented by concrete ASR providers."""
+    """Common interface implemented by ASR clients."""
 
     def transcribe(self, audio_path: Path) -> TranscriptionResult:
         """Return recognized text from AUDIO_PATH."""
 
 
-class FasterWhisperASR:
-    """Local ASR provider backed by faster-whisper."""
-
-    def __init__(self, settings: ASRSettings) -> None:
-        """Store SETTINGS and lazily load the model on first use."""
-        self._settings = settings
-        self._model = None
-
-    def transcribe(self, audio_path: Path) -> TranscriptionResult:
-        """Transcribe AUDIO_PATH with faster-whisper."""
-        return self.transcribe_with_language(audio_path, self._settings.language)
-
-    def transcribe_with_language(
-        self, audio_path: Path, language: str | None
-    ) -> TranscriptionResult:
-        """Transcribe AUDIO_PATH with an optional per-request LANGUAGE."""
-        if not audio_path.exists():
-            raise ASRError(f"Audio file does not exist: {audio_path}")
-
-        model = self._load_model()
-        try:
-            segments, info = model.transcribe(
-                str(audio_path),
-                language=language,
-                vad_filter=True,
-            )
-            text = "".join(segment.text for segment in segments).strip()
-        except Exception as exc:
-            raise ASRError(f"ASR transcription failed: {exc}") from exc
-
-        if not text:
-            raise ASRError("ASR returned empty text.")
-
-        return TranscriptionResult(
-            text=text,
-            language=getattr(info, "language", None),
-            duration=getattr(info, "duration", None),
-        )
-
-    def _load_model(self):
-        """Load the Whisper model once and reuse it for later turns."""
-        if self._model is not None:
-            return self._model
-
-        try:
-            from faster_whisper import WhisperModel
-
-            self._model = WhisperModel(
-                self._settings.model_size,
-                device=self._settings.device,
-                compute_type=self._settings.compute_type,
-            )
-        except Exception as exc:
-            raise ASRError(f"Failed to load faster-whisper model: {exc}") from exc
-
-        return self._model
-
-
 class RemoteASR:
-    """Remote ASR provider that uploads audio to an HTTP transcription service."""
+    """ASR client that uploads WAV files to a LAN transcription service."""
 
     def __init__(self, settings: ASRSettings) -> None:
-        """Store remote endpoint settings from ASRSettings."""
+        """Store remote endpoint settings from SETTINGS."""
         self._settings = settings
         if not settings.remote_url:
-            raise ASRError("ASR_REMOTE_URL is required when ASR_PROVIDER=remote.")
+            raise ASRError("ASR_REMOTE_URL is required.")
 
     def transcribe(self, audio_path: Path) -> TranscriptionResult:
-        """Upload AUDIO_PATH and return the server transcription."""
+        """Upload AUDIO_PATH and return the parsed transcription response."""
         if not audio_path.exists():
             raise ASRError(f"Audio file does not exist: {audio_path}")
 
@@ -117,15 +59,7 @@ class RemoteASR:
         except json.JSONDecodeError as exc:
             raise ASRError("Remote ASR returned invalid JSON.") from exc
 
-        text = str(payload.get("text", "")).strip()
-        if not text:
-            raise ASRError("Remote ASR returned empty text.")
-
-        return TranscriptionResult(
-            text=text,
-            language=_optional_str(payload.get("language")),
-            duration=_optional_float(payload.get("duration")),
-        )
+        return _parse_transcription_payload(payload)
 
     def _build_request(self, audio_path: Path) -> Request:
         """Build a multipart/form-data upload request for AUDIO_PATH."""
@@ -143,7 +77,7 @@ class RemoteASR:
             headers["Authorization"] = f"Bearer {self._settings.remote_api_key}"
 
         return Request(
-            self._settings.remote_url or "",
+            self._settings.remote_url,
             data=body,
             headers=headers,
             method="POST",
@@ -151,9 +85,7 @@ class RemoteASR:
 
 
 def create_speech_recognizer(settings: ASRSettings) -> SpeechRecognizer:
-    """Create a concrete ASR provider from SETTINGS."""
-    if settings.provider == "faster-whisper":
-        return FasterWhisperASR(settings)
+    """Create the configured ASR client."""
     if settings.provider == "remote":
         return RemoteASR(settings)
     raise ASRError(f"Unsupported ASR provider: {settings.provider}")
@@ -163,9 +95,9 @@ def _build_multipart_body(
     *, boundary: str, audio_path: Path, language: str | None
 ) -> bytes:
     """Return a multipart body containing language and one WAV file."""
-    lines: list[bytes] = []
+    parts: list[bytes] = []
     if language:
-        lines.extend(
+        parts.extend(
             [
                 f"--{boundary}\r\n".encode("utf-8"),
                 b'Content-Disposition: form-data; name="language"\r\n\r\n',
@@ -174,7 +106,7 @@ def _build_multipart_body(
             ]
         )
 
-    lines.extend(
+    parts.extend(
         [
             f"--{boundary}\r\n".encode("utf-8"),
             (
@@ -187,7 +119,23 @@ def _build_multipart_body(
             f"--{boundary}--\r\n".encode("utf-8"),
         ]
     )
-    return b"".join(lines)
+    return b"".join(parts)
+
+
+def _parse_transcription_payload(payload: object) -> TranscriptionResult:
+    """Convert a remote JSON payload into TranscriptionResult."""
+    if not isinstance(payload, dict):
+        raise ASRError("Remote ASR returned a non-object JSON payload.")
+
+    text = str(payload.get("text", "")).strip()
+    if not text:
+        raise ASRError("Remote ASR returned empty text.")
+
+    return TranscriptionResult(
+        text=text,
+        language=_optional_str(payload.get("language")),
+        duration=_optional_float(payload.get("duration")),
+    )
 
 
 def _no_proxy_opener():
