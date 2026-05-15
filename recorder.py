@@ -39,6 +39,9 @@ class WavRecorder:
         silence_frames = _frames_for_ms(
             self._settings.vad.silence_ms, self._settings.vad.frame_ms
         )
+        start_frames = _frames_for_ms(
+            self._settings.vad.start_ms, self._settings.vad.frame_ms
+        )
         min_speech_frames = _frames_for_ms(
             self._settings.vad.min_speech_ms, self._settings.vad.frame_ms
         )
@@ -56,6 +59,7 @@ class WavRecorder:
 
         output_path = self._build_output_path()
         started = False
+        pending_speech_frames = 0
         speech_frames = 0
         quiet_frames = 0
         captured: list[np.ndarray] = []
@@ -68,6 +72,7 @@ class WavRecorder:
                 channels=self._settings.channels,
                 dtype="int16",
                 blocksize=frame_samples,
+                device=self._settings.record_device,
             ) as stream:
                 for _ in range(max_frames):
                     frame, overflowed = stream.read(frame_samples)
@@ -78,10 +83,15 @@ class WavRecorder:
                     if not started:
                         preroll.append(frame.copy())
                         if is_speech:
-                            print("Speech detected.")
-                            started = True
-                            captured.extend(preroll)
-                            preroll.clear()
+                            pending_speech_frames += 1
+                            if pending_speech_frames >= start_frames:
+                                print("Speech detected.")
+                                started = True
+                                speech_frames = pending_speech_frames
+                                captured.extend(preroll)
+                                preroll.clear()
+                        else:
+                            pending_speech_frames = 0
                         continue
 
                     captured.append(frame.copy())

@@ -1,123 +1,129 @@
-# Voice Conversation Agent - Text Prototype
+# Raspberry Pi Voice Agent
 
-This project is a command-line chat agent. It uses an OpenAI-compatible chat API for text conversation and Windows system TTS for speech output.
+This project is a Raspberry Pi command-line voice agent. The Pi records speech
+from a ReSpeaker 2-Mics Pi HAT, sends the WAV file to a LAN ASR server, sends
+the recognized text to an OpenAI-compatible chat API, and prints the assistant
+reply in the terminal.
 
-## Install
+TTS is intentionally not implemented in this client yet.
 
-```powershell
-python -m venv .venv
-.\.venv\Scripts\Activate.ps1
+## Raspberry Pi Setup
+
+Install system audio dependencies:
+
+```bash
+sudo apt update
+sudo apt install -y python3-venv portaudio19-dev alsa-utils
+```
+
+Create the Python environment:
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-## Chat Configuration
+Copy and edit the config:
 
-Copy the example config:
-
-```powershell
-Copy-Item .env.example .env
+```bash
+cp .env.example .env
+nano .env
 ```
 
-Edit `.env`:
+Set your API key and ASR server address:
 
 ```env
 MINIMAX_API_KEY=your_minimax_api_key_here
-MINIMAX_BASE_URL=https://api.minimaxi.com/v1
-MINIMAX_MODEL=MiniMax-M2.7
-MINIMAX_API_MODE=chat
-MAX_HISTORY_TURNS=20
+ASR_REMOTE_URL=http://192.168.1.100:8000/v1/transcriptions
 ```
 
-If you override `AGENT_SYSTEM_PROMPT`, keep the Simplified Chinese requirement:
+## Raspberry Pi Audio
+
+The expected microphone is a ReSpeaker 2-Mics Pi HAT at:
 
 ```env
-AGENT_SYSTEM_PROMPT=Reply in concise Simplified Chinese. Do not use Traditional Chinese unless explicitly requested.
+RECORD_DEVICE=plughw:3,0
+RECORD_SAMPLE_RATE=16000
+RECORD_CHANNELS=1
 ```
 
-## Run
+Verify ALSA recording directly:
 
-```powershell
+```bash
+arecord -D plughw:3,0 -f S16_LE -r 16000 -c 1 -d 5 test.wav
+aplay test.wav
+```
+
+Verify the Python audio path:
+
+```bash
+python pi_audio_check.py
+```
+
+If speech starts before you talk, raise `VAD_START_THRESHOLD` or
+`VAD_START_MS`. If speech is not detected, lower `VAD_START_THRESHOLD`.
+
+## Run The Agent
+
+```bash
 python main.py
 ```
 
 Commands:
 
-- `voice` / `v`: record one utterance, transcribe it, and send it to the agent
+- `voice` / `v`: enter continuous voice mode
 - `exit` / `quit`: stop the program
 - `reset` / `clear`: clear the current conversation
 
-## Voice Input
-
-The ASR module uses a generic recognizer interface. The first provider is
-`faster-whisper`, which runs locally and does not need an ASR API key.
-
-The `voice` command enters a continuous voice loop. The recorder listens for
-speech, stops automatically after sustained silence, transcribes the saved WAV,
-sends the text to the agent, plays the answer, and then starts listening again.
+In voice mode, the program records one utterance, uploads it to the remote ASR
+server, prints the recognized text, sends it to the LLM, and prints the reply.
 Say `退出语音模式` to leave voice mode.
 
-```env
-ASR_PROVIDER=faster-whisper
-ASR_MODEL_SIZE=base
-ASR_DEVICE=cpu
-ASR_COMPUTE_TYPE=int8
-ASR_LANGUAGE=zh
-RECORDINGS_DIR=recordings
-RECORD_SAMPLE_RATE=16000
-RECORD_CHANNELS=1
-VAD_FRAME_MS=30
-VAD_START_THRESHOLD=0.018
-VAD_END_THRESHOLD=0.012
-VAD_SILENCE_MS=900
-VAD_MIN_SPEECH_MS=300
-VAD_MAX_RECORD_SECONDS=20
-VAD_PREROLL_MS=300
+## Remote ASR Server
+
+Run this on the GPU server, not on the Raspberry Pi:
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements-asr-server.txt
+export ASR_MODEL_SIZE=medium
+export ASR_DEVICE=cuda
+export ASR_COMPUTE_TYPE=float16
+export ASR_LANGUAGE=zh
+python -m uvicorn asr_server:app --host 0.0.0.0 --port 8000
 ```
 
-Notes:
+`medium + cuda + float16` is the recommended starting point for an RTX 4060.
+Use `small` for lower latency, or `large-v3` if accuracy matters more than
+response time.
 
-- `ASR_MODEL_SIZE=tiny` is faster but less accurate.
-- `ASR_MODEL_SIZE=base` is a good CPU MVP default.
-- The first run downloads the model.
-- Recordings are saved in `recordings/`, which is ignored by git.
-- If recording fails on Windows, try `RECORD_SAMPLE_RATE=44100` to match your microphone device.
-- Raise `VAD_START_THRESHOLD` if background noise starts recordings too easily.
-- Lower `VAD_START_THRESHOLD` if speech is not detected.
+Optional LAN token:
 
-## Text To Speech
-
-The TTS module uses the local `system` provider, which relies on Windows built-in speech synthesis and does not need a cloud TTS plan.
-
-Enable local Windows TTS in `.env`:
-
-```env
-TTS_ENABLED=true
-TTS_PROVIDER=system
-TTS_FORMAT=wav
-TTS_OUTPUT_DIR=outputs
-TTS_AUTOPLAY=true
-TTS_STREAMING=true
-TTS_STREAM_CHUNK_CHARS=60
+```bash
+export ASR_SERVER_API_KEY=change-me
 ```
 
-Notes:
+If the server token is set, put the same value in the Pi client's
+`ASR_REMOTE_API_KEY`.
 
-- `system` outputs WAV files and works only on Windows for now.
-- Audio files are saved in `TTS_OUTPUT_DIR`, which defaults to `outputs`.
-- `outputs/` is ignored by git.
-- `TTS_STREAMING=true` makes the agent speak short sentence chunks while the model is still generating.
-- `TTS_STREAM_CHUNK_CHARS` controls the maximum chunk size when punctuation is sparse.
-- In streaming mode, chunks are played immediately regardless of `TTS_AUTOPLAY`; that flag only affects non-streaming playback.
+Test the server:
+
+```bash
+curl -F "file=@recordings/input.wav" -F "language=zh" http://192.168.1.100:8000/v1/transcriptions
+```
 
 ## Files
 
-- `main.py`: command-line chat loop
+- `main.py`: command-line chat and voice loop
 - `agent.py`: OpenAI-compatible chat API calls and error handling
 - `conversation.py`: bounded conversation history
 - `config.py`: environment variable loading and validation
-- `recorder.py`: microphone recording and WAV saving
-- `asr.py`: generic ASR interface plus faster-whisper provider
+- `recorder.py`: ReSpeaker microphone recording and WAV saving
 - `voice_activity.py`: energy-based voice activity detection
-- `tts.py`: generic TTS interface plus the Windows system provider
-- `streaming_tts.py`: streaming text chunking, TTS byte generation, and ordered audio playback
+- `asr.py`: remote ASR client plus optional faster-whisper provider
+- `asr_server.py`: LAN HTTP ASR server for GPU-backed transcription
+- `pi_audio_check.py`: Raspberry Pi microphone diagnostics
+- `vad_probe.py`: VAD background-noise measurement tool
 - `.env.example`: local configuration template; never commit real `.env` values
