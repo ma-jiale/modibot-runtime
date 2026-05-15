@@ -179,6 +179,22 @@ def _reply_with_text(agent: VoiceTextAgent, tts: TextToSpeech, user_text: str) -
     except TTSError as exc:
         print()
         print(f"TTS failed: {exc}")
+        print("Falling back to text-only reply.")
+        _reply_with_text_only(agent, user_text)
+        return
+
+    print()
+
+
+def _reply_with_text_only(agent: VoiceTextAgent, user_text: str) -> None:
+    """Stream one assistant reply without speech playback."""
+    try:
+        print("Agent> ", end="", flush=True)
+        for chunk in agent.stream_chat(user_text):
+            print(chunk, end="", flush=True)
+    except AgentError as exc:
+        print()
+        print(f"Request failed: {exc}")
         return
 
     print()

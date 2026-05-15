@@ -127,6 +127,10 @@ that normal playback works:
 aplay test.wav
 ```
 
+If the websocket connection returns HTTP 401, check that `DOUBAO_TTS_API_KEY`
+comes from the new Volcengine console and that `DOUBAO_TTS_RESOURCE_ID` matches
+the enabled product, for example `seed-tts-2.0`.
+
 ## Run The Agent
 
 ```bash

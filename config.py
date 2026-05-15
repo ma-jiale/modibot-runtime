@@ -236,7 +236,9 @@ def _read_vad_settings() -> VADSettings:
 
 def _read_tts_settings() -> TTSSettings:
     """Load text-to-speech settings."""
-    provider = _read_first_env("TTS_PROVIDER", default=DEFAULT_TTS_PROVIDER).lower()
+    provider = _normalize_tts_provider(
+        _read_first_env("TTS_PROVIDER", default=DEFAULT_TTS_PROVIDER)
+    )
     if provider not in VALID_TTS_PROVIDERS:
         valid_providers = ", ".join(sorted(VALID_TTS_PROVIDERS))
         raise RuntimeError(f"TTS_PROVIDER must be one of: {valid_providers}.")
@@ -282,6 +284,14 @@ def _read_tts_settings() -> TTSSettings:
             "TTS_SESSION_TIMEOUT", DEFAULT_TTS_SESSION_TIMEOUT
         ),
     )
+
+
+def _normalize_tts_provider(provider: str) -> str:
+    """Return the canonical TTS provider name for user-facing aliases."""
+    normalized = provider.strip().lower()
+    if normalized in {"", "off", "disabled", "system"}:
+        return "none"
+    return normalized
 
 
 def _read_base_url() -> str | None:
