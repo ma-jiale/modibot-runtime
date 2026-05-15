@@ -72,7 +72,7 @@ VAD_SILENCE_MS=900
 Use the probe to tune thresholds in your room:
 
 ```bash
-python vad_probe.py --duration 8
+python test/vad_probe.py --duration 8
 ```
 
 If speech starts before you talk, raise `TEN_VAD_START_THRESHOLD` or
@@ -99,7 +99,7 @@ aplay test.wav
 Verify the Python audio path:
 
 ```bash
-python pi_audio_check.py
+python test/pi_audio_check.py
 ```
 
 ## Streaming TTS
@@ -130,6 +130,12 @@ aplay test.wav
 If the websocket connection returns HTTP 401, check that `DOUBAO_TTS_API_KEY`
 comes from the new Volcengine console and that `DOUBAO_TTS_RESOURCE_ID` matches
 the enabled product, for example `seed-tts-2.0`.
+
+Verify TTS synthesis and playback directly:
+
+```bash
+python test/tts_audio_check.py
+```
 
 ## Run The Agent
 
@@ -201,6 +207,7 @@ curl -v --noproxy '*' http://192.168.1.100:8000/health
 - `asr.py`: remote ASR client used by the Raspberry Pi
 - `asr_server.py`: LAN HTTP ASR server for GPU-backed transcription
 - `server_asr.py`: faster-whisper provider used by the ASR server
-- `pi_audio_check.py`: Raspberry Pi microphone diagnostics
-- `vad_probe.py`: TEN VAD probability measurement tool
+- `test/pi_audio_check.py`: Raspberry Pi microphone diagnostics
+- `test/vad_probe.py`: TEN VAD probability measurement tool
+- `test/tts_audio_check.py`: TTS synthesis and playback diagnostics
 - `.env.example`: local configuration template; never commit real `.env` values

@@ -119,7 +119,7 @@ class TTSSettings:
     audio_format: str
     sample_rate: int
     channels: int
-    output_device: str | None
+    output_device: str | int | None
     speech_rate: int
     loudness_rate: int
     connect_timeout: float
@@ -270,7 +270,7 @@ def _read_tts_settings() -> TTSSettings:
         audio_format=audio_format,
         sample_rate=_read_positive_int("TTS_SAMPLE_RATE", DEFAULT_TTS_SAMPLE_RATE),
         channels=_read_positive_int("TTS_CHANNELS", DEFAULT_TTS_CHANNELS),
-        output_device=_read_optional_env("TTS_OUTPUT_DEVICE"),
+        output_device=_read_optional_audio_device("TTS_OUTPUT_DEVICE"),
         speech_rate=_read_int_in_range(
             "TTS_SPEECH_RATE", DEFAULT_TTS_SPEECH_RATE, -50, 100
         ),
@@ -292,6 +292,17 @@ def _normalize_tts_provider(provider: str) -> str:
     if normalized in {"", "off", "disabled", "system"}:
         return "none"
     return normalized
+
+
+def _read_optional_audio_device(name: str) -> str | int | None:
+    """Return an optional sounddevice device selector."""
+    value = _read_optional_env(name)
+    if value is None:
+        return None
+    try:
+        return int(value)
+    except ValueError:
+        return value
 
 
 def _read_base_url() -> str | None:

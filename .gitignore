@@ -4,7 +4,6 @@ venv/
 __pycache__/
 *.py[cod]
 .pytest_cache/
-test.py
 outputs/
 recordings/
 ten_vad_python*.so
