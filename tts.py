@@ -52,6 +52,8 @@ class TextToSpeech:
         text_chunks: Iterable[str],
         *,
         on_text: Callable[[str], None] | None = None,
+        on_event: Callable[[str], None] | None = None,
+        play_audio: bool = True,
     ) -> None:
         """Speak TEXT_CHUNKS while optionally echoing each chunk."""
 
@@ -64,6 +66,8 @@ class SilentTextToSpeech(TextToSpeech):
         text_chunks: Iterable[str],
         *,
         on_text: Callable[[str], None] | None = None,
+        on_event: Callable[[str], None] | None = None,
+        play_audio: bool = True,
     ) -> None:
         """Consume text chunks without producing audio."""
         for chunk in text_chunks:
@@ -83,10 +87,19 @@ class DoubaoStreamingTTS(TextToSpeech):
         text_chunks: Iterable[str],
         *,
         on_text: Callable[[str], None] | None = None,
+        on_event: Callable[[str], None] | None = None,
+        play_audio: bool = True,
     ) -> None:
         """Run one streaming TTS session for TEXT_CHUNKS."""
         try:
-            asyncio.run(self._speak_stream_async(text_chunks, on_text=on_text))
+            asyncio.run(
+                self._speak_stream_async(
+                    text_chunks,
+                    on_text=on_text,
+                    on_event=on_event,
+                    play_audio=play_audio,
+                )
+            )
         except TTSError:
             raise
         except (OSError, sd.PortAudioError, websockets.WebSocketException) as exc:
@@ -97,6 +110,8 @@ class DoubaoStreamingTTS(TextToSpeech):
         text_chunks: Iterable[str],
         *,
         on_text: Callable[[str], None] | None,
+        on_event: Callable[[str], None] | None,
+        play_audio: bool,
     ) -> None:
         """Connect, send text chunks, receive audio, and close cleanly."""
         headers = _build_headers(self._settings)
@@ -109,9 +124,15 @@ class DoubaoStreamingTTS(TextToSpeech):
                 session_id = uuid4().hex
                 await self._start_session(websocket, session_id)
 
-                with PCMStreamPlayer(self._settings) as player:
+                player = _create_audio_sink(self._settings, play_audio)
+                with player:
                     receiver = asyncio.create_task(
-                        self._receive_audio(websocket, session_id, player)
+                        self._receive_audio(
+                            websocket,
+                            session_id,
+                            player,
+                            on_event=on_event,
+                        )
                     )
                     sender = asyncio.create_task(
                         self._send_text_chunks(
@@ -187,18 +208,32 @@ class DoubaoStreamingTTS(TextToSpeech):
         websocket,
         session_id: str,
         player: "PCMStreamPlayer",
+        *,
+        on_event: Callable[[str], None] | None,
     ) -> None:
         """Receive Doubao frames until the current session is finished."""
+        audio_frames = 0
+        audio_bytes = 0
         while True:
             frame = _parse_server_frame(await websocket.recv())
             if frame.session_id and frame.session_id != session_id:
                 continue
+            if on_event is not None:
+                on_event(_describe_frame(frame))
             if frame.event in {EVENT_SESSION_FAILED, EVENT_SESSION_CANCELED}:
                 raise TTSError(_format_frame_error("Doubao TTS session stopped", frame))
             if frame.event == EVENT_TTS_RESPONSE and frame.payload:
+                audio_frames += 1
+                audio_bytes += len(frame.payload)
                 await asyncio.to_thread(player.write, frame.payload)
                 continue
             if frame.event == EVENT_SESSION_FINISHED:
+                if audio_frames == 0:
+                    raise TTSError("Doubao TTS finished without returning audio.")
+                if on_event is not None:
+                    on_event(
+                        f"audio summary: frames={audio_frames}, bytes={audio_bytes}"
+                    )
                 return
 
     async def _wait_for_session(
@@ -273,6 +308,27 @@ class PCMStreamPlayer:
         samples = np.frombuffer(chunk, dtype="<i2")
         samples = samples.reshape(-1, self._settings.channels)
         self._stream.write(samples)
+
+
+class NullAudioSink:
+    """Discard PCM audio while preserving TTS receive flow."""
+
+    def __enter__(self) -> "NullAudioSink":
+        """Return this sink without opening an audio device."""
+        return self
+
+    def __exit__(self, exc_type, exc, traceback) -> None:
+        """Close the sink."""
+
+    def write(self, audio: bytes) -> None:
+        """Discard AUDIO."""
+
+
+def _create_audio_sink(settings: TTSSettings, play_audio: bool):
+    """Return the configured audio sink."""
+    if play_audio:
+        return PCMStreamPlayer(settings)
+    return NullAudioSink()
 
 
 @dataclass(frozen=True)
@@ -494,6 +550,18 @@ def _format_frame_error(prefix: str, frame: ParsedFrame) -> str:
     if frame.error_code is not None:
         return f"{prefix}: error {frame.error_code}. {detail_text}"
     return f"{prefix}: {detail_text}"
+
+
+def _describe_frame(frame: ParsedFrame) -> str:
+    """Return a compact frame description for diagnostics."""
+    parts = [f"event={frame.event}"]
+    if frame.session_id:
+        parts.append(f"session={frame.session_id[:8]}...")
+    if frame.payload:
+        parts.append(f"payload_bytes={len(frame.payload)}")
+    if frame.payload_json is not None:
+        parts.append(f"json={frame.payload_json}")
+    return "TTS frame: " + ", ".join(parts)
 
 
 def _next_chunk(iterator) -> str | None:

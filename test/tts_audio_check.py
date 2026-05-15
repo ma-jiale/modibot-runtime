@@ -12,13 +12,30 @@ from config import load_settings
 from tts import TTSError, create_text_to_speech
 
 
+DEFAULT_TEXT = (
+    "\u4f60\u597d\uff0c"
+    "\u8fd9\u662f\u6811\u8393\u6d3e\u8bed\u97f3\u5408\u6210"
+    "\u64ad\u653e\u6d4b\u8bd5\u3002"
+)
+
+
 def main() -> int:
-    """Synthesize one phrase with TTS and play it through sounddevice."""
+    """Synthesize one phrase with TTS and optionally play it locally."""
     parser = argparse.ArgumentParser(description="Test TTS synthesis and playback.")
     parser.add_argument(
         "--text",
-        default="你好，这是树莓派语音合成播放测试。",
+        default=DEFAULT_TEXT,
         help="Text to synthesize and play.",
+    )
+    parser.add_argument(
+        "--no-play",
+        action="store_true",
+        help="Receive TTS audio without opening the local playback device.",
+    )
+    parser.add_argument(
+        "--verbose",
+        action="store_true",
+        help="Print TTS websocket events and audio payload sizes.",
     )
     args = parser.parse_args()
 
@@ -41,11 +58,19 @@ def main() -> int:
         print("TTS is disabled. Set TTS_PROVIDER=doubao before running this check.")
         return 1
 
-    print("Playing TTS test audio...")
+    if args.no_play:
+        print("Receiving TTS audio without local playback...")
+    else:
+        print("Playing TTS test audio...")
+
     try:
         create_text_to_speech(settings.tts).speak_stream(
             [args.text],
             on_text=lambda chunk: print(chunk, end="", flush=True),
+            on_event=(lambda event: print(f"\n{event}", flush=True))
+            if args.verbose
+            else None,
+            play_audio=not args.no_play,
         )
     except TTSError as exc:
         print()

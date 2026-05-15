@@ -137,6 +137,16 @@ Verify TTS synthesis and playback directly:
 python test/tts_audio_check.py
 ```
 
+If the script hangs after printing the text, first check whether TTS audio is
+arriving without opening the local playback device:
+
+```bash
+python test/tts_audio_check.py --no-play --verbose
+```
+
+If `--no-play` finishes and reports audio bytes, set `TTS_OUTPUT_DEVICE` to one
+of the output device indexes printed by the script and retry playback.
+
 ## Run The Agent
 
 ```bash
